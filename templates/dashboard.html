@@ -3,184 +3,360 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Cloud IDS — Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <title>Cloud IDS — Tactical Security Operations Console</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <style>
     :root {
-      --bg: #f5f6fa;
-      --card: #ffffff;
-      --border: #e8eaf0;
-      --text: #1a1f36;
-      --muted: #8892a4;
-      --accent: #2563eb;
-      --accent-soft: #eff4ff;
-      --red: #dc2626;
-      --red-soft: #fef2f2;
-      --green: #16a34a;
-      --green-soft: #f0fdf4;
-      --orange: #ea580c;
-      --orange-soft: #fff7ed;
-      --purple: #7c3aed;
-      --shadow: 0 1px 3px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.05);
-      --shadow-lg: 0 8px 32px rgba(0,0,0,0.10);
+      --bg-base: #090d16;
+      --bg-panel: #111726;
+      --bg-card: #161e31;
+      --bg-active: #1d2840;
+      --border-subtle: #1e293b;
+      --border-bright: #334155;
+      
+      --text-main: #f8fafc;
+      --text-muted: #64748b;
+      --text-highlight: #94a3b8;
+
+      --cyan: #06b6d4;
+      --cyan-glow: rgba(6, 182, 212, 0.15);
+      --red: #f43f5e;
+      --red-glow: rgba(244, 63, 94, 0.2);
+      --green: #10b981;
+      --green-glow: rgba(16, 185, 129, 0.2);
+      --amber: #f59e0b;
+      --amber-glow: rgba(245, 158, 11, 0.2);
+      --purple: #a855f7;
+
+      --font-sans: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
     }
+
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
-    header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0 32px; display: flex; align-items: center; justify-content: space-between; height: 64px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 0 var(--border); }
-    .logo { display: flex; align-items: center; gap: 12px; }
-    .logo-icon { width: 36px; height: 36px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
-    .logo-text h1 { font-size: 0.95rem; font-weight: 700; color: var(--text); }
-    .logo-text p { font-size: 0.72rem; color: var(--muted); font-weight: 400; }
-    .header-right { display: flex; align-items: center; gap: 16px; }
-    .live-pill { display: flex; align-items: center; gap: 6px; background: var(--green-soft); color: var(--green); border: 1px solid #bbf7d0; padding: 4px 12px; border-radius: 100px; font-size: 0.75rem; font-weight: 600; }
-    .live-dot { width: 6px; height: 6px; background: var(--green); border-radius: 50%; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .accuracy-badge { background: var(--accent-soft); color: var(--accent); border: 1px solid #bfdbfe; padding: 4px 12px; border-radius: 100px; font-size: 0.75rem; font-weight: 600; font-family: 'DM Mono', monospace; }
-    main { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
-    .grid-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-    .grid-mid  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-    .grid-bot  { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
-    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent); }
-    .stat-card.red::before { background: var(--red); }
-    .stat-card.green::before { background: var(--green); }
-    .stat-card.orange::before { background: var(--orange); }
-    .stat-label { font-size: 0.72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
-    .stat-value { font-size: 2.2rem; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--text); line-height: 1; }
-    .stat-card.red .stat-value  { color: var(--red); }
-    .stat-card.green .stat-value { color: var(--green); }
-    .stat-card.orange .stat-value { color: var(--orange); }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 22px; box-shadow: var(--shadow); }
-    .card-title { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
-    .card-title span { font-size: 14px; }
-    .detection-box { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; text-align: center; }
-    .detection-type { font-size: 1.8rem; font-weight: 700; color: var(--text); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
-    .detection-type.threat { color: var(--red); }
-    .detection-type.safe   { color: var(--green); }
-    .detection-tags { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-    .tag { padding: 4px 12px; border-radius: 100px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; }
-    .tag-HIGH     { background: var(--red-soft);    color: var(--red);    border: 1px solid #fecaca; }
-    .tag-MEDIUM   { background: var(--orange-soft); color: var(--orange); border: 1px solid #fed7aa; }
-    .tag-NONE     { background: var(--green-soft);  color: var(--green);  border: 1px solid #bbf7d0; }
-    .tag-CRITICAL { background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8; }
-    .tag-BLOCK    { background: var(--red-soft);    color: var(--red);    border: 1px solid #fecaca; }
-    .tag-ALLOW    { background: var(--green-soft);  color: var(--green);  border: 1px solid #bbf7d0; }
-    .tag-ALERT    { background: var(--orange-soft); color: var(--orange); border: 1px solid #fed7aa; }
-    .tag-conf     { background: var(--accent-soft); color: var(--accent); border: 1px solid #bfdbfe; font-family: 'DM Mono', monospace; }
-    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .attack-btn { padding: 10px 8px; border: 1.5px solid var(--border); border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 0.78rem; font-family: 'DM Sans', sans-serif; background: var(--card); color: var(--text); transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .attack-btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
-    .attack-btn.danger  { border-color: #fecaca; background: var(--red-soft);    color: var(--red); }
-    .attack-btn.warning { border-color: #fed7aa; background: var(--orange-soft); color: var(--orange); }
-    .attack-btn.medium  { border-color: #bfdbfe; background: var(--accent-soft); color: var(--accent); }
-    .attack-btn.success { border-color: #bbf7d0; background: var(--green-soft);  color: var(--green); grid-column: span 2; }
-    .feed { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
-    .feed-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); font-size: 0.78rem; animation: slideIn 0.2s ease; }
-    @keyframes slideIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
-    .feed-item.threat { background: var(--red-soft); border-color: #fecaca; }
-    .feed-item.safe   { background: var(--green-soft); border-color: #bbf7d0; }
-    .feed-time { color: var(--muted); font-family: 'DM Mono', monospace; font-size: 0.7rem; }
-    .feed-attack { font-weight: 600; }
-    .feed-badge { padding: 2px 10px; border-radius: 100px; font-size: 0.68rem; font-weight: 700; }
-    .feed-badge.block { background: var(--red);   color: white; }
-    .feed-badge.allow { background: var(--green); color: white; }
-    .feed-badge.alert { background: var(--orange);color: white; }
-    .dist-item { margin-bottom: 12px; }
-    .dist-row  { display: flex; justify-content: space-between; font-size: 0.75rem; margin-bottom: 5px; font-weight: 500; }
-    .dist-count { color: var(--muted); font-family: 'DM Mono', monospace; }
-    .bar-track { background: var(--bg); border-radius: 100px; height: 6px; border: 1px solid var(--border); }
-    .bar-fill  { height: 6px; border-radius: 100px; transition: width 0.4s ease; }
+    
+    body { 
+      background: var(--bg-base); 
+      color: var(--text-main); 
+      font-family: var(--font-sans); 
+      min-height: 100vh;
+      background-image: radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.05) 0%, transparent 75%);
+    }
+
+    header { 
+      background: rgba(17, 23, 38, 0.8); 
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-subtle); 
+      padding: 0 28px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: space-between; 
+      height: 64px; 
+      position: sticky; 
+      top: 0; 
+      z-index: 100; 
+    }
+
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-icon { 
+      width: 32px; 
+      height: 32px; 
+      background: var(--cyan-glow); 
+      border: 1px solid var(--cyan);
+      border-radius: 6px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      color: var(--cyan);
+      font-weight: 700;
+      font-family: var(--font-mono);
+      box-shadow: 0 0 12px var(--cyan-glow);
+    }
+    
+    .brand-text h1 { font-size: 0.95rem; font-weight: 700; letter-spacing: 0.02em; }
+    .brand-text p { font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+    .header-status { display: flex; align-items: center; gap: 12px; }
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--text-highlight);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: blink 2s infinite;
+    }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    main { padding: 24px; max-width: 1600px; margin: 0 auto; }
+
+    /* Top Grid Metrics */
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+    .metric-card { 
+      background: var(--bg-panel); 
+      border: 1px solid var(--border-subtle); 
+      border-radius: 8px; 
+      padding: 16px 20px; 
+      position: relative;
+    }
+    .metric-title { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; font-family: var(--font-mono); }
+    .metric-value { font-size: 1.8rem; font-weight: 700; font-family: var(--font-mono); margin-top: 6px; color: var(--text-main); }
+    
+    .metric-card.threat .metric-value { color: var(--red); }
+    .metric-card.safe .metric-value { color: var(--green); }
+    .metric-card.rate .metric-value { color: var(--amber); }
+
+    /* Layout Sections */
+    .layout-top { display: grid; grid-template-columns: 1.2fr 1.5fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .layout-bottom { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+
+    .panel { 
+      background: var(--bg-panel); 
+      border: 1px solid var(--border-subtle); 
+      border-radius: 8px; 
+      padding: 18px; 
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .panel-header { 
+      font-size: 0.72rem; 
+      font-weight: 700; 
+      color: var(--text-highlight); 
+      text-transform: uppercase; 
+      letter-spacing: 0.1em; 
+      margin-bottom: 14px; 
+      display: flex; 
+      align-items: center; 
+      gap: 8px;
+      font-family: var(--font-mono);
+    }
+
+    /* Detection Monitor Box */
+    .monitor-box {
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 24px 16px;
+      text-align: center;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .monitor-target {
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+    .monitor-target.threat { color: var(--red); text-shadow: 0 0 16px var(--red-glow); }
+    .monitor-target.safe { color: var(--green); text-shadow: 0 0 16px var(--green-glow); }
+
+    .tag-group { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .sys-tag {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .sys-tag.HIGH, .sys-tag.BLOCK, .sys-tag.CRITICAL { background: var(--red-glow); color: var(--red); border-color: var(--red); }
+    .sys-tag.MEDIUM, .sys-tag.ALERT { background: var(--amber-glow); color: var(--amber); border-color: var(--amber); }
+    .sys-tag.NONE, .sys-tag.ALLOW { background: var(--green-glow); color: var(--green); border-color: var(--green); }
+    .sys-tag.conf { background: var(--cyan-glow); color: var(--cyan); border-color: var(--cyan); }
+
+    /* Trigger Matrix Buttons */
+    .matrix-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .matrix-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-main);
+      padding: 10px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .matrix-btn:hover { border-color: var(--border-bright); background: var(--bg-active); }
+    .matrix-btn.crit:hover { border-color: var(--red); color: var(--red); }
+    .matrix-btn.warn:hover { border-color: var(--amber); color: var(--amber); }
+    .matrix-btn.info:hover { border-color: var(--cyan); color: var(--cyan); }
+    .matrix-btn.pass { text-align: center; justify-content: center; border-color: rgba(16, 185, 129, 0.3); }
+    .matrix-btn.pass:hover { border-color: var(--green); color: var(--green); background: var(--green-glow); }
+
+    /* Distribution Chart */
+    .dist-container { flex-grow: 1; display: flex; flex-direction: column; justify-content: center; }
+    .dist-row { margin-bottom: 10px; }
+    .dist-meta { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; margin-bottom: 4px; }
+    .dist-track { height: 4px; background: var(--bg-base); border-radius: 2px; overflow: hidden; }
+    .dist-fill { height: 100%; transition: width 0.3s ease; }
+
+    /* Feed Console */
+    .console-feed {
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      height: 280px;
+      overflow-y: auto;
+      padding: 10px;
+      font-family: var(--font-mono);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .feed-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--bg-panel);
+      border-left: 2px solid var(--border-subtle);
+      font-size: 0.72rem;
+    }
+    .feed-row.threat { border-left-color: var(--red); background: rgba(244, 63, 94, 0.05); }
+    .feed-row.safe { border-left-color: var(--green); }
+    .feed-time { color: var(--text-muted); }
+    .feed-type { font-weight: 600; color: var(--text-main); }
+    .feed-act { font-size: 0.65rem; padding: 2px 6px; border-radius: 2px; font-weight: 700; text-transform: uppercase; }
+    .feed-act.block { background: var(--red); color: #000; }
+    .feed-act.allow { background: var(--green); color: #000; }
+    .feed-act.alert { background: var(--amber); color: #000; }
+
+    /* Spec List */
+    .spec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .spec-card { background: var(--bg-base); border: 1px solid var(--border-subtle); padding: 10px; border-radius: 4px; }
+    .spec-key { font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); text-transform: uppercase; }
+    .spec-val { font-size: 0.85rem; font-weight: 700; font-family: var(--font-mono); color: var(--text-main); margin-top: 2px; }
+
     ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border-subtle); }
   </style>
 </head>
 <body>
+
 <header>
-  <div class="logo">
-    <div class="logo-icon">🛡️</div>
-    <div class="logo-text">
-      <h1>Cloud Intrusion Detection System</h1>
-      <p>ML-Powered Network Security Monitor</p>
+  <div class="brand">
+    <div class="brand-icon">IDS</div>
+    <div class="brand-text">
+      <h1>CLOUD INTRUSION DETECTION CONSOLE</h1>
+      <p>ENGINE: <span id="headerModel">XGBOOST</span> MODEL &bull; CIC-IDS2017</p>
     </div>
   </div>
-  <div class="header-right">
-    <span class="accuracy-badge">XGBoost · 99.97%</span>
-    <div class="live-pill"><div class="live-dot"></div> LIVE</div>
+  <div class="header-status">
+    <div class="status-badge"><div class="status-dot"></div> ENGINE ONLINE</div>
+    <div class="status-badge" style="color: var(--cyan);">ACCURACY: <span id="headerAccuracy">--</span>%</div>
   </div>
 </header>
 
 <main>
-  <div class="grid-top">
-    <div class="stat-card"><div class="stat-label">Total Analyzed</div><div class="stat-value" id="totalCount">0</div></div>
-    <div class="stat-card red"><div class="stat-label">Threats Detected</div><div class="stat-value" id="threatCount">0</div></div>
-    <div class="stat-card green"><div class="stat-label">Safe Traffic</div><div class="stat-value" id="safeCount">0</div></div>
-    <div class="stat-card orange"><div class="stat-label">Threat Rate</div><div class="stat-value" id="threatRate">0%</div></div>
-  </div>
-
-  <div class="grid-mid">
-    <div class="card">
-      <div class="card-title"><span>🔍</span> Last Detection</div>
-      <div class="detection-box">
-        <div class="detection-type" id="attackLabel">— IDLE —</div>
-        <div class="detection-tags" id="detectionTags"><span class="tag tag-NONE">Click a button to test</span></div>
-      </div>
+  <div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-title">TOTAL EVALUATED</div>
+      <div class="metric-value" id="totalCount">0</div>
     </div>
-
-    <div class="card">
-      <div class="card-title"><span>⚡</span> Simulate Attack</div>
-      <div class="btn-grid">
-        <button class="attack-btn danger"  onclick="simulate('DDoS')">🔴 DDoS</button>
-        <button class="attack-btn danger"  onclick="simulate('DoS Hulk')">🔴 DoS Hulk</button>
-        <button class="attack-btn warning" onclick="simulate('DoS GoldenEye')">🟠 GoldenEye</button>
-        <button class="attack-btn warning" onclick="simulate('DoS slowloris')">🟠 Slowloris</button>
-        <button class="attack-btn medium"  onclick="simulate('PortScan')">🔵 PortScan</button>
-        <button class="attack-btn medium"  onclick="simulate('Bot')">🔵 Bot</button>
-        <button class="attack-btn medium"  onclick="simulate('FTP-Patator')">🔵 FTP-Patator</button>
-        <button class="attack-btn medium"  onclick="simulate('SSH-Patator')">🔵 SSH-Patator</button>
-        <button class="attack-btn success" onclick="simulate('BENIGN')">✅ Normal Traffic (BENIGN)</button>
-      </div>
+    <div class="metric-card threat">
+      <div class="metric-title">THREATS INTERCEPTED</div>
+      <div class="metric-value" id="threatCount">0</div>
     </div>
-
-    <div class="card">
-      <div class="card-title"><span>📊</span> Attack Distribution</div>
-      <div id="distribution"><p style="color:var(--muted);font-size:0.8rem;text-align:center;padding:20px 0">No data yet — simulate some traffic!</p></div>
+    <div class="metric-card safe">
+      <div class="metric-title">PASSENGER TRAFFIC</div>
+      <div class="metric-value" id="safeCount">0</div>
+    </div>
+    <div class="metric-card rate">
+      <div class="metric-title">THREAT RATIO</div>
+      <div class="metric-value" id="threatRate">0.0%</div>
     </div>
   </div>
 
-  <div class="grid-bot">
-    <div class="card">
-      <div class="card-title"><span>📡</span> Live Traffic Feed</div>
-      <div class="feed" id="feed">
-        <div class="feed-item safe"><span class="feed-attack">System ready — waiting for traffic simulation</span><span class="feed-badge allow">IDLE</span></div>
+  <div class="layout-top">
+    <div class="panel">
+      <div class="panel-header"><span>[!]</span> LAST DETECTION STATE</div>
+      <div class="monitor-box">
+        <div class="monitor-target" id="attackLabel">SYSTEM IDLE</div>
+        <div class="tag-group" id="detectionTags">
+          <span class="sys-tag conf">AWAITING VECTOR SIMULATION</span>
+        </div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title"><span>🤖</span> Model Intelligence</div>
-      <div style="display:flex;flex-direction:column;gap:12px;margin-top:4px;">
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
-          <div style="font-size:0.7rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Algorithm</div>
-          <div style="font-weight:700;font-family:'DM Mono',monospace;color:var(--accent)">XGBoost</div>
+    <div class="panel">
+      <div class="panel-header"><span>[>]</span> INJECT TRAFFIC VECTOR</div>
+      <div class="matrix-grid">
+        <button class="matrix-btn crit" onclick="simulate('DDoS')">⚡ DDoS</button>
+        <button class="matrix-btn crit" onclick="simulate('DoS Hulk')">⚡ DoS Hulk</button>
+        <button class="matrix-btn warn" onclick="simulate('DoS GoldenEye')">▲ GoldenEye</button>
+        <button class="matrix-btn warn" onclick="simulate('DoS slowloris')">▲ Slowloris</button>
+        <button class="matrix-btn warn" onclick="simulate('DoS Slowhttptest')">▲ Slowhttptest</button>
+        <button class="matrix-btn info" onclick="simulate('PortScan')">◌ PortScan</button>
+        <button class="matrix-btn crit" onclick="simulate('Bot')">◌ Botnet</button>
+        <button class="matrix-btn info" onclick="simulate('FTP-Patator')">◌ FTP-Patator</button>
+        <button class="matrix-btn info" onclick="simulate('SSH-Patator')">◌ SSH-Patator</button>
+        <button class="matrix-btn crit" onclick="simulate('Web Attack - Brute Force')">⚡ Web BF</button>
+        <button class="matrix-btn crit" onclick="simulate('Web Attack - XSS')">⚡ Web XSS</button>
+        <button class="matrix-btn pass" onclick="simulate('BENIGN')">✓ BENIGN TRAFFIC</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><span>[#]</span> VECTOR SPECTRUM</div>
+      <div class="dist-container" id="distribution">
+        <span style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-mono); text-align:center;">No traffic metrics generated</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout-bottom">
+    <div class="panel">
+      <div class="panel-header"><span>[$]</span> REAL-TIME TELEMETRY STREAM</div>
+      <div class="console-feed" id="feed">
+        <div class="feed-row safe">
+          <span class="feed-time">--:--:--</span>
+          <span class="feed-type">Core system ready — select vector to evaluate</span>
+          <span class="feed-act allow">SYS_INIT</span>
         </div>
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
-          <div style="font-size:0.7rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Dataset</div>
-          <div style="font-weight:700;font-size:0.85rem">CIC-IDS 2017</div>
-          <div style="font-size:0.72rem;color:var(--muted);margin-top:2px">2.8M traffic samples</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><span>[*]</span> INFERENCE ARCHITECTURE</div>
+      <div class="spec-grid">
+        <div class="spec-card">
+          <div class="spec-key">MODEL</div>
+          <div class="spec-val" id="specModel" style="color:var(--cyan);">--</div>
         </div>
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
-          <div style="font-size:0.7rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Performance</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
-            <div style="font-size:0.72rem"><span style="color:var(--muted)">Accuracy</span><br><strong style="font-family:'DM Mono',monospace;color:var(--green)">99.97%</strong></div>
-            <div style="font-size:0.72rem"><span style="color:var(--muted)">Precision</span><br><strong style="font-family:'DM Mono',monospace;color:var(--green)">99.97%</strong></div>
-            <div style="font-size:0.72rem"><span style="color:var(--muted)">Recall</span><br><strong style="font-family:'DM Mono',monospace;color:var(--green)">99.97%</strong></div>
-            <div style="font-size:0.72rem"><span style="color:var(--muted)">F1-Score</span><br><strong style="font-family:'DM Mono',monospace;color:var(--green)">99.97%</strong></div>
-          </div>
+        <div class="spec-card">
+          <div class="spec-key">CLASSES</div>
+          <div class="spec-val" id="specClasses">-- Target</div>
         </div>
-        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;">
-          <div style="font-size:0.7rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">Attack Classes</div>
-          <div style="font-weight:700;font-family:'DM Mono',monospace;font-size:1.4rem;color:var(--purple)">12</div>
-          <div style="font-size:0.72rem;color:var(--muted)">types detected</div>
+        <div class="spec-card">
+          <div class="spec-key">FEATURES</div>
+          <div class="spec-val" id="specFeatures">-- Flow</div>
+        </div>
+        <div class="spec-card">
+          <div class="spec-key">LATENCY</div>
+          <div class="spec-val" style="color:var(--green);">&lt; 12ms</div>
         </div>
       </div>
     </div>
@@ -189,77 +365,132 @@
 
 <script>
 let ATTACK_PROFILES = {};
-const BAR_COLORS = {"DDoS":"#dc2626","DoS Hulk":"#ea580c","PortScan":"#2563eb","Bot":"#7c3aed","FTP-Patator":"#0891b2","SSH-Patator":"#475569","DoS GoldenEye":"#d97706","DoS slowloris":"#c2410c","BENIGN":"#16a34a","Web Attack  Brute Force":"#9333ea","Web Attack  XSS":"#0284c7","DoS Slowhttptest":"#b45309"};
-const stats = {total:0,threats:0,safe:0};
-const attackCounts = {};
+const BAR_COLORS = {"DDoS":"#f43f5e","DoS Hulk":"#f97316","PortScan":"#06b6d4","Bot":"#a855f7","FTP-Patator":"#3b82f6","SSH-Patator":"#64748b","DoS GoldenEye":"#f59e0b","DoS slowloris":"#ea580c","DoS Slowhttptest":"#dc7a2b","Web Attack - Brute Force":"#ef4444","Web Attack - XSS":"#b91c1c","BENIGN":"#10b981"};
 
-// Load real samples on page load
 fetch("/samples")
   .then(r => r.json())
-  .then(data => { ATTACK_PROFILES = data; console.log("✅ Real samples loaded:", Object.keys(data)); })
-  .catch(e => console.error("Failed to load samples:", e));
+  .then(data => { ATTACK_PROFILES = data; })
+  .catch(e => console.error("Sample fetch fail:", e));
+
+async function loadHealth() {
+  try {
+    const res = await fetch("/health");
+    const h = await res.json();
+    document.getElementById("headerModel").textContent = (h.model_name || "").toUpperCase();
+    document.getElementById("headerAccuracy").textContent = h.metrics.accuracy;
+    document.getElementById("specModel").textContent = h.model_name || "Unknown";
+    document.getElementById("specClasses").textContent = `${h.class_count} Target`;
+    document.getElementById("specFeatures").textContent = `${h.feature_count} Flow`;
+  } catch(e) { console.error("Health fetch fail:", e); }
+}
+
+// Metric cards + spectrum come from the backend log (/stats, /distribution) so
+// they persist across refreshes instead of resetting to zero each page load.
+async function loadStats() {
+  try {
+    const [st, dist] = await Promise.all([
+      fetch("/stats").then(r => r.json()),
+      fetch("/distribution").then(r => r.json())
+    ]);
+    document.getElementById("totalCount").textContent  = (st.total || 0).toLocaleString();
+    document.getElementById("threatCount").textContent = (st.threats || 0).toLocaleString();
+    document.getElementById("safeCount").textContent   = (st.benign || 0).toLocaleString();
+    document.getElementById("threatRate").textContent  = st.threat_rate || "0.0%";
+    renderDistribution(dist || {});
+  } catch(e) { console.error("Stats fetch fail:", e); }
+}
 
 async function simulate(attackType) {
+  const profile = ATTACK_PROFILES[attackType];
+  if (!profile) {
+    addConsoleError(`No sample vector available for "${attackType}"`);
+    return;
+  }
   try {
-    const profile = ATTACK_PROFILES[attackType] || {};
     const res = await fetch("/predict", {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify(profile)
     });
     const data = await res.json();
+    if (data.error) { addConsoleError(data.error); return; }
     updateDashboard(data);
+    loadStats();   // re-sync metric cards + spectrum with the backend log
   } catch(e) { console.error(e); }
 }
 
 function updateDashboard(d) {
-  stats.total++;
-  if(d.is_threat) stats.threats++; else stats.safe++;
-  document.getElementById("totalCount").textContent  = stats.total;
-  document.getElementById("threatCount").textContent = stats.threats;
-  document.getElementById("safeCount").textContent   = stats.safe;
-  document.getElementById("threatRate").textContent  = Math.round((stats.threats/stats.total)*100)+"%";
-
   const lbl = document.getElementById("attackLabel");
   lbl.textContent = d.attack_type;
-  lbl.className = "detection-type " + (d.is_threat ? "threat" : "safe");
+  lbl.className = "monitor-target " + (d.is_threat ? "threat" : "safe");
 
   document.getElementById("detectionTags").innerHTML = `
-    <span class="tag tag-${d.severity}">SEVERITY: ${d.severity}</span>
-    <span class="tag tag-${d.action}">ACTION: ${d.action}</span>
-    <span class="tag tag-conf">${d.confidence}</span>
+    <span class="sys-tag ${d.severity}">SEV: ${d.severity}</span>
+    <span class="sys-tag ${d.action}">ACT: ${d.action}</span>
+    <span class="sys-tag conf">CONF: ${d.confidence}</span>
   `;
 
   addFeedItem(d);
-  attackCounts[d.attack_type] = (attackCounts[d.attack_type]||0)+1;
-  updateDistribution();
 }
 
 function addFeedItem(d) {
   const feed = document.getElementById("feed");
   const el = document.createElement("div");
-  el.className = "feed-item "+(d.is_threat?"threat":"safe");
+  el.className = "feed-row "+(d.is_threat?"threat":"safe");
+  
+  const now = new Date().toTimeString().split(' ')[0];
+  const side = d.response_detail
+    ? ` <span class="feed-act ${d.action.toLowerCase()}">${d.action}${d.response_detail.blocked_ip ? " " + d.response_detail.blocked_ip : ""}</span>`
+    : ` <span class="feed-act ${d.action.toLowerCase()}">${d.action}</span>`;
   el.innerHTML = `
-    <div style="display:flex;gap:10px;align-items:center">
-      <span class="feed-time">${new Date().toLocaleTimeString()}</span>
-      <span class="feed-attack">${d.attack_type}</span>
-      ${d.severity!=="NONE"?`<span style="font-size:0.7rem;color:var(--muted)">${d.severity}</span>`:""}
-    </div>
-    <span class="feed-badge ${d.action.toLowerCase()}">${d.action}</span>
+    <span class="feed-time">${now}</span>
+    <span class="feed-type">${d.attack_type}</span>${side}
   `;
+  
   feed.insertBefore(el, feed.firstChild);
-  if(feed.children.length > 50) feed.removeChild(feed.lastChild);
+  if(feed.children.length > 30) feed.removeChild(feed.lastChild);
 }
 
-function updateDistribution() {
+function addConsoleError(msg) {
+  const feed = document.getElementById("feed");
+  const el = document.createElement("div");
+  el.className = "feed-row threat";
+  el.innerHTML = `
+    <span class="feed-time">${new Date().toTimeString().split(' ')[0]}</span>
+    <span class="feed-type" style="color:var(--amber);">ERR: ${msg}</span>
+    <span class="feed-act alert">SKIP</span>
+  `;
+  feed.insertBefore(el, feed.firstChild);
+  if(feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+function renderDistribution(dist) {
   const el = document.getElementById("distribution");
-  const total = Object.values(attackCounts).reduce((a,b)=>a+b,0);
-  el.innerHTML = Object.entries(attackCounts).sort((a,b)=>b[1]-a[1]).map(([name,count])=>{
+  const total = Object.values(dist).reduce((a,b)=>a+b,0);
+
+  if (!total) {
+    el.innerHTML = `<span style="font-size:0.7rem; color:var(--text-muted); font-family:var(--font-mono); text-align:center;">No traffic metrics generated</span>`;
+    return;
+  }
+
+  el.innerHTML = Object.entries(dist).sort((a,b)=>b[1]-a[1]).map(([name,count])=>{
     const pct = Math.round((count/total)*100);
-    const color = BAR_COLORS[name]||"#6366f1";
-    return `<div class="dist-item"><div class="dist-row"><span>${name}</span><span class="dist-count">${count} · ${pct}%</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
+    const color = BAR_COLORS[name]||"#06b6d4";
+    return `
+      <div class="dist-row-item">
+        <div class="dist-meta">
+          <span>${name}</span>
+          <span style="color:var(--text-muted);">${count} (${pct}%)</span>
+        </div>
+        <div class="dist-track">
+          <div class="dist-fill" style="width:${pct}%; background:${color}"></div>
+        </div>
+      </div>`;
   }).join("");
 }
+
+loadHealth();
+loadStats();
 </script>
 </body>
 </html>
