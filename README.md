@@ -9,9 +9,9 @@ A machine learning-powered network intrusion detection system built as a Final Y
 - **99.79% Accuracy** — XGBoost model, evaluated on an untouched 16,000-record test set
 - **Simulated Real-Time Detection** — Flask API classifies submitted traffic samples instantly
 - **12 Attack Classes** — DDoS, DoS variants, PortScan, Bot, Brute Force, and more
-- **Recommended Response** — Severity-based ALERT/BLOCK/ALLOW recommendation (advisory only — no automated blocking is executed; see Limitations)
+- **Automated Response Engine** — severity-based BLOCK/ALERT/ALLOW decisions are actually *executed* (in-memory simulated: blocked source IPs, alert/action log — see `/responses`)
 - **Live Dashboard** — Real-time detection feed, attack distribution chart, and model metrics pulled live from the backend
-- **REST API** — `/predict`, `/health`, `/logs`, `/stats`, `/model-info`, `/distribution` endpoints
+- **REST API** — `/predict`, `/health`, `/logs`, `/stats`, `/model-info`, `/distribution`, `/responses` endpoints
 
 ---
 
@@ -54,7 +54,7 @@ XGBoost was selected as the production model based on superior weighted performa
 
 - **Not deployed to a live cloud environment** at time of writing — tested locally only
 - **Simulation-based, not live traffic** — the dashboard classifies sample feature vectors, not packets captured from a real network in real time
-- **No automated blocking** — the system recommends a response (`recommended_action`) and explicitly reports `response_executed: false`; no traffic is actually blocked
+- **Response engine is simulated, not real enforcement** — BLOCK actions maintain an in-memory deny list and log firewall-style commands (`/responses`); no actual network traffic is dropped. It demonstrates the response layer a production IDS would hand off to a firewall/EDR.
 - **Minority class performance** — classes with very few test examples (Bot, Web Attack Brute Force, Web Attack XSS) show lower precision/recall than majority classes
 
 ---
@@ -82,8 +82,9 @@ cloud-ids-project/
 │   ├── preprocess_data.py      ← Leakage-free cleaning, scaling, SMOTE
 │   ├── train_model.py          ← Model training & evaluation
 │   ├── extract_samples.py      ← Real attack samples for dashboard simulation
-│   ├── fix_label_names.py      ← One-time label encoding cleanup
-│   └── regenerate_report.py    ← Regenerates confusion matrix/report
+│   ├── response_engine.py      ← Simulated BLOCK/ALERT/ALLOW response layer
+│   ├── fix_label_names.py      ← One-time label encoding cleanup (raw CSVs)
+│   └── regenerate_report.py    ← Regenerates confusion matrix/report without retraining
 ├── templates/
 │   ├── dashboard.html          ← Real-time dashboard UI
 │   └── attack_samples.json     ← Real dataset rows for simulation
@@ -117,6 +118,10 @@ pip install -r requirements.txt
 python src/preprocess_data.py
 python src/train_model.py
 python src/extract_samples.py
+#   (optional) fix mojibake in raw Web Attack labels, then re-run the pipeline
+python src/fix_label_names.py --dry-run
+#   (optional) regenerate report/figure outputs without retraining
+python src/regenerate_report.py
 
 # 6. Run the app
 python app.py
