@@ -82,10 +82,6 @@ def validate_predict_input(data):
     return True, None
 
 
-# ── Detection log ─────────────────────────────────────────────────────────────
-detection_log = []
-stats = {"total": 0, "threats": 0, "benign": 0}
-
 # ── Simulated response engine ─────────────────────────────────────────────────
 # Turns the recommended action into an "executed" mitigation (simulated only —
 # e.g. BLOCK adds the source IP to an in-memory deny list). See src/response_engine.py.
@@ -95,6 +91,33 @@ try:
 except Exception as e:   # never crash startup over the response layer
     print(f"[warn] Response engine unavailable: {e}")
     response_engine = None
+
+# ── Per-client state ──────────────────────────────────────────────────────────
+# Detection log, stats, and the response engine are kept per client so each
+# device/browser sees only its own feed. The dashboard sends an `X-Client-Id`
+# header (a persistent per-browser id); API callers without one share a "shared"
+# bucket. All state is in-memory and resets when the app restarts.
+MAX_CLIENTS = 200
+CLIENT_STATE = {}
+
+
+def client_state():
+    """Return (creating if needed) the state bucket for the requesting client."""
+    cid = request.headers.get("X-Client-Id", "shared")
+    if not cid:
+        cid = "shared"
+
+    state = CLIENT_STATE.get(cid)
+    if state is None:
+        if len(CLIENT_STATE) >= MAX_CLIENTS:      # evict oldest bucket, keep memory bounded
+            CLIENT_STATE.pop(next(iter(CLIENT_STATE)))
+        state = {
+            "log": [],
+            "stats": {"total": 0, "threats": 0, "benign": 0},
+            "engine": ResponseEngine() if response_engine is not None else None,
+        }
+        CLIENT_STATE[cid] = state
+    return state
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -173,8 +196,10 @@ def predict():
     is_threat = bool(attack_name != "BENIGN")
 
     # Execute the (simulated) response — BLOCK/ALERT/ALLOW via the response engine.
-    if response_engine is not None:
-        response = response_engine.handle(
+    state = client_state()
+    engine = state["engine"]
+    if engine is not None:
+        response = engine.handle(
             attack_name, severity, recommended_action,
             source_ip=meta_fields["source_ip"],
             confidence=f"{round(confidence, 2)}%",
@@ -207,26 +232,30 @@ def predict():
         "destination_port":    meta_fields["destination_port"],
     }
 
-    detection_log.insert(0, entry)
-    if len(detection_log) > 100:
-        detection_log.pop()
+    log = state["log"]
+    log.insert(0, entry)
+    if len(log) > 100:
+        log.pop()
 
-    stats["total"] += 1
+    st = state["stats"]
+    st["total"] += 1
     if is_threat:
-        stats["threats"] += 1
+        st["threats"] += 1
     else:
-        stats["benign"] += 1
+        st["benign"] += 1
 
     return jsonify(entry)
 
 
 @app.route("/logs", methods=["GET"])
 def logs():
-    return jsonify(detection_log[:20])
+    state = client_state()
+    return jsonify(state["log"][:20])
 
 
 @app.route("/stats", methods=["GET"])
 def get_stats():
+    stats = client_state()["stats"]
     rate = round((stats["threats"] / stats["total"]) * 100, 1) if stats["total"] > 0 else 0
     return jsonify({**stats, "threat_rate": str(rate) + "%"})
 
@@ -236,7 +265,7 @@ def distribution():
     """Attack-type distribution derived from the backend log, so the dashboard
     doesn't need to keep its own in-browser counts that vanish on refresh."""
     counts = {}
-    for entry in detection_log:
+    for entry in client_state()["log"]:
         name = entry["attack_type"]
         counts[name] = counts.get(name, 0) + 1
     return jsonify(counts)
@@ -245,9 +274,10 @@ def distribution():
 @app.route("/responses", methods=["GET"])
 def responses():
     """State of the simulated response engine: blocked IPs and recent actions."""
-    if response_engine is None:
+    engine = client_state()["engine"]
+    if engine is None:
         return jsonify({"available": False}), 503
-    return jsonify({"available": True, **response_engine.snapshot()})
+    return jsonify({"available": True, **engine.snapshot()})
 
 
 if __name__ == "__main__":
