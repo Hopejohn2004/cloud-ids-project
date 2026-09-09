@@ -2,6 +2,8 @@
 
 A machine learning-powered network intrusion detection system built as a Final Year Project. Trained on a stratified 80,000-record sample drawn from the CIC-IDS2017 dataset (2,830,743 raw records), achieving **99.79% weighted accuracy** using XGBoost.
 
+> 🌐 **Live demo:** https://cloud-ids-c88k.onrender.com
+
 ---
 
 ## 🎯 Features
@@ -52,9 +54,9 @@ XGBoost was selected as the production model based on superior weighted performa
 
 ## ⚠️ Limitations (Honest Disclosure)
 
-- **Not deployed to a live cloud environment** at time of writing — tested locally only
 - **Simulation-based, not live traffic** — the dashboard classifies sample feature vectors, not packets captured from a real network in real time
 - **Response engine is simulated, not real enforcement** — BLOCK actions maintain an in-memory deny list and log firewall-style commands (`/responses`); no actual network traffic is dropped. It demonstrates the response layer a production IDS would hand off to a firewall/EDR.
+- **In-memory state** — detection logs, stats, and the blocked-IP deny list reset on restart (no database yet)
 - **Minority class performance** — classes with very few test examples (Bot, Web Attack Brute Force, Web Attack XSS) show lower precision/recall than majority classes
 
 ---
@@ -77,6 +79,8 @@ XGBoost was selected as the production model based on superior weighted performa
 cloud-ids-project/
 ├── app.py                      ← Flask API + routes
 ├── Procfile                    ← Render deployment start command
+├── render.yaml                 ← Render Blueprint (deployment config)
+├── runtime.txt                 ← Python version pin (3.12)
 ├── requirements.txt            ← Python dependencies
 ├── src/
 │   ├── preprocess_data.py      ← Leakage-free cleaning, scaling, SMOTE
@@ -128,6 +132,19 @@ python app.py
 ```
 
 Open `http://localhost:5000`
+
+---
+
+## ☁️ Cloud Deployment (Render)
+
+A Render Blueprint config (`render.yaml`) is included. To deploy:
+
+1. Push this repo to GitHub
+2. Go to https://dashboard.render.com/blueprints → **New + → Blueprint**
+3. Connect the `cloud-ids-project` repository
+4. Render auto-detects `render.yaml` → click **Apply**
+
+The app reads the `$PORT` environment variable and runs under Gunicorn, so no code changes are needed between local and cloud. Model artifacts (`best_model.pkl`, `scaler.pkl`, `label_encoder.pkl`) are committed so a fresh clone runs without the raw dataset.
 
 ---
 
