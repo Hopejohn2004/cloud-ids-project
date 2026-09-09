@@ -367,6 +367,17 @@
 let ATTACK_PROFILES = {};
 const BAR_COLORS = {"DDoS":"#f43f5e","DoS Hulk":"#f97316","PortScan":"#06b6d4","Bot":"#a855f7","FTP-Patator":"#3b82f6","SSH-Patator":"#64748b","DoS GoldenEye":"#f59e0b","DoS slowloris":"#ea580c","DoS Slowhttptest":"#dc7a2b","Web Attack - Brute Force":"#ef4444","Web Attack - XSS":"#b91c1c","BENIGN":"#10b981"};
 
+// Per-browser session id: persists in localStorage so a device keeps its own
+// detection feed across refreshes, while a brand-new device starts clean.
+let CLIENT_ID = localStorage.getItem("ids_client_id");
+if (!CLIENT_ID) {
+  CLIENT_ID = crypto.randomUUID
+    ? crypto.randomUUID()
+    : "u" + Date.now() + "-" + Math.random().toString(16).slice(2);
+  localStorage.setItem("ids_client_id", CLIENT_ID);
+}
+const CLIENT_HEADERS = { "X-Client-Id": CLIENT_ID };
+
 fetch("/samples")
   .then(r => r.json())
   .then(data => { ATTACK_PROFILES = data; })
@@ -389,8 +400,8 @@ async function loadHealth() {
 async function loadStats() {
   try {
     const [st, dist] = await Promise.all([
-      fetch("/stats").then(r => r.json()),
-      fetch("/distribution").then(r => r.json())
+      fetch("/stats", { headers: CLIENT_HEADERS }).then(r => r.json()),
+      fetch("/distribution", { headers: CLIENT_HEADERS }).then(r => r.json())
     ]);
     document.getElementById("totalCount").textContent  = (st.total || 0).toLocaleString();
     document.getElementById("threatCount").textContent = (st.threats || 0).toLocaleString();
@@ -409,7 +420,7 @@ async function simulate(attackType) {
   try {
     const res = await fetch("/predict", {
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json", ...CLIENT_HEADERS},
       body: JSON.stringify(profile)
     });
     const data = await res.json();
