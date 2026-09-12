@@ -6,6 +6,12 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
+import hashlib
+import threading
+import time
+
+from src.storage import SQLiteStore
+from src.response_engine import ResponseEngine
 
 app = Flask(__name__)
 CORS(app)
@@ -27,6 +33,44 @@ CLASS_NAMES = list(label_encoder.classes_)
 
 print(f"Model loaded: {MODEL_METADATA.get('model_name', 'unknown')} | "
       f"{len(CLASS_NAMES)} classes | {len(FEATURE_NAMES)} features")
+
+# ── Configuration ────────────────────────────────────────────────────────────
+# Below this confidence the model is not trusted enough to commit to a single
+# attack class; the verdict is labelled UNCERTAIN instead of the argmax class.
+CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", 55.0))
+
+# Simple per-client rate limit for /predict (0 disables). Prevents the free
+# demo being hammered as an unbounded compute endpoint.
+RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", 60))
+
+# ── Persistent state (SQLite, survives restarts) ─────────────────────────────
+storage = SQLiteStore()
+
+# ── Simulated response engine per client ────────────────────────────────────
+# Detection log, stats and response state live in SQLite; each client (browser
+# device, or the shared bucket for header-less API callers) gets its own
+# engine instance so devices never see each other's feed. Engine instances
+# are just thin handles over the shared store, so this cache stays tiny.
+MAX_CLIENTS = 200
+ENGINE_CACHE = {}
+
+
+def client_id():
+    return request.headers.get("X-Client-Id", "shared") or "shared"
+
+
+def client_state():
+    """Return (creating if needed) the response-engine handle for this client."""
+    cid = client_id()
+    storage.register_client(cid)
+    engine = ENGINE_CACHE.get(cid)
+    if engine is None:
+        if len(ENGINE_CACHE) >= MAX_CLIENTS:      # evict oldest bucket, keep cache bounded
+            ENGINE_CACHE.pop(next(iter(ENGINE_CACHE)))
+        engine = ResponseEngine(store=storage, client_id=cid)
+        ENGINE_CACHE[cid] = engine
+    return engine
+
 
 # ── Severity & recommended-action mapping ─────────────────────────────────────
 SEVERITY_MAP = {
@@ -82,42 +126,46 @@ def validate_predict_input(data):
     return True, None
 
 
-# ── Simulated response engine ─────────────────────────────────────────────────
-# Turns the recommended action into an "executed" mitigation (simulated only —
-# e.g. BLOCK adds the source IP to an in-memory deny list). See src/response_engine.py.
-try:
-    from src.response_engine import ResponseEngine
-    response_engine = ResponseEngine()
-except Exception as e:   # never crash startup over the response layer
-    print(f"[warn] Response engine unavailable: {e}")
-    response_engine = None
+# ── Minimal per-key rate limiter (in-memory token window) ────────────────────
+class RateLimiter:
+    """Sliding-window limiter. allow(key) returns True if a request may proceed."""
 
-# ── Per-client state ──────────────────────────────────────────────────────────
-# Detection log, stats, and the response engine are kept per client so each
-# device/browser sees only its own feed. The dashboard sends an `X-Client-Id`
-# header (a persistent per-browser id); API callers without one share a "shared"
-# bucket. All state is in-memory and resets when the app restarts.
-MAX_CLIENTS = 200
-CLIENT_STATE = {}
+    def __init__(self, per_minute):
+        self.period = per_minute
+        self.window = 60.0
+        self._hits = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key):
+        if self.period <= 0:
+            return True
+        now = time.time()
+        with self._lock:
+            if len(self._hits) > 10000:                      # prune stale keys
+                cutoff = now - self.window
+                self._hits = {k: [t for t in v if t >= cutoff] for k, v in self._hits.items() if v}
+            window = self._hits.setdefault(key, [])
+            while window and now - window[0] > self.window:
+                window.pop(0)
+            if len(window) >= self.period:
+                return False
+            window.append(now)
+            return True
 
 
-def client_state():
-    """Return (creating if needed) the state bucket for the requesting client."""
-    cid = request.headers.get("X-Client-Id", "shared")
-    if not cid:
-        cid = "shared"
+rate_limiter = RateLimiter(RATE_LIMIT_PER_MIN)
 
-    state = CLIENT_STATE.get(cid)
-    if state is None:
-        if len(CLIENT_STATE) >= MAX_CLIENTS:      # evict oldest bucket, keep memory bounded
-            CLIENT_STATE.pop(next(iter(CLIENT_STATE)))
-        state = {
-            "log": [],
-            "stats": {"total": 0, "threats": 0, "benign": 0},
-            "engine": ResponseEngine() if response_engine is not None else None,
-        }
-        CLIENT_STATE[cid] = state
-    return state
+
+# ── Synthetic simulator source IP ────────────────────────────────────────────
+# The dashboard's demo triggers don't send real packet fields, so for simulated
+# traffic we mint a stable-looking attacker IP per client so the response
+# engine's blocked-source deny list actually fills up. API callers that DO send
+# a source_ip keep their own.
+def synthetic_source_ip(cid):
+    n = storage.stats(cid)["total"]
+    digest = hashlib.sha1(f"{cid}:{n}".encode("utf-8")).hexdigest()
+    return f"10.{int(digest[0:2], 16) % 256}.{int(digest[2:4], 16) % 256}.{n % 254 + 1}"
+
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -147,6 +195,8 @@ def health():
         },
         "trained_at":  MODEL_METADATA.get("trained_at"),
         "monitoring_mode": "SIMULATION",  # honest: not connected to live traffic capture yet
+        "confidence_threshold": CONFIDENCE_THRESHOLD,
+        "persistence": "sqlite",
         "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     })
 
@@ -165,6 +215,9 @@ def samples():
 
 @app.route("/predict", methods=["POST"])
 def predict():
+    if not rate_limiter.allow(client_id() + ":" + (request.remote_addr or "")):
+        return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
+
     data = request.get_json(silent=True)
 
     if data is None:
@@ -191,39 +244,43 @@ def predict():
     pred_idx = int(np.argmax(probabilities))
     confidence = float(probabilities[pred_idx]) * 100
 
-    attack_name = CLASS_NAMES[pred_idx] if pred_idx < len(CLASS_NAMES) else "UNKNOWN"
-    severity, recommended_action = get_severity_action(attack_name)
+    # Confidence gate: below the threshold we don't trust the argmax commit,
+    # so the verdict is "UNCERTAIN" instead of a specific attack class.
+    if confidence < CONFIDENCE_THRESHOLD:
+        attack_name = "UNCERTAIN"
+        severity = "LOW"
+        recommended_action = "ALERT"
+    else:
+        attack_name = CLASS_NAMES[pred_idx] if pred_idx < len(CLASS_NAMES) else "UNKNOWN"
+        severity, recommended_action = get_severity_action(attack_name)
+
     is_threat = bool(attack_name != "BENIGN")
 
+    cid = client_id()
+    if meta_fields["source_ip"] is None:
+        meta_fields["source_ip"] = synthetic_source_ip(cid)
+
     # Execute the (simulated) response — BLOCK/ALERT/ALLOW via the response engine.
-    state = client_state()
-    engine = state["engine"]
-    if engine is not None:
-        response = engine.handle(
-            attack_name, severity, recommended_action,
-            source_ip=meta_fields["source_ip"],
-            confidence=f"{round(confidence, 2)}%",
-        )
-        executed_action = response.get("action", recommended_action)
-        response_detail = response
-    else:
-        executed_action = recommended_action
-        response_detail = {"executed": False, "detail": "Response engine unavailable."}
+    engine = client_state()
+    response = engine.handle(
+        attack_name, severity, recommended_action,
+        source_ip=meta_fields["source_ip"],
+        confidence=f"{round(confidence, 2)}%",
+    )
+    executed_action = response.get("action", recommended_action)
 
     entry = {
         "timestamp":           datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "attack_type":         str(attack_name),
         "severity":            str(severity),
-        # "action" is what was actually (simulatedly) executed now that the
-        # response engine is wired in. recommended_action is kept as the
-        # advisory alias used by any API consumers.
+        # "action" is what was actually (simulatedly) executed. recommended_action
+        # is kept as the advisory alias used by any API consumers.
         "action":              str(executed_action),
         "recommended_action":  str(recommended_action),
-        "response_executed":   bool(response_detail.get("executed", False)),
-        "response_detail":     response_detail,
+        "response_executed":   bool(response.get("executed", False)),
+        "response_detail":     response,
         # dashboards interpolate this directly (CONF: ${d.confidence}) with no
-        # extra "%" added on their end, so the % must be baked in here, matching
-        # the old behaviour's format even though the number itself is now real.
+        # extra "%" added on their end, so the % must be baked in here.
         "confidence":          f"{round(confidence, 2)}%",
         "is_threat":           is_threat,
         "source_ip":           meta_fields["source_ip"],
@@ -232,51 +289,32 @@ def predict():
         "destination_port":    meta_fields["destination_port"],
     }
 
-    log = state["log"]
-    log.insert(0, entry)
-    if len(log) > 100:
-        log.pop()
-
-    st = state["stats"]
-    st["total"] += 1
-    if is_threat:
-        st["threats"] += 1
-    else:
-        st["benign"] += 1
-
+    storage.add_detection(cid, entry)
     return jsonify(entry)
 
 
 @app.route("/logs", methods=["GET"])
 def logs():
-    state = client_state()
-    return jsonify(state["log"][:20])
+    return jsonify(storage.recent_detections(client_id(), 20))
 
 
 @app.route("/stats", methods=["GET"])
 def get_stats():
-    stats = client_state()["stats"]
+    stats = storage.stats(client_id())
     rate = round((stats["threats"] / stats["total"]) * 100, 1) if stats["total"] > 0 else 0
     return jsonify({**stats, "threat_rate": str(rate) + "%"})
 
 
 @app.route("/distribution", methods=["GET"])
 def distribution():
-    """Attack-type distribution derived from the backend log, so the dashboard
-    doesn't need to keep its own in-browser counts that vanish on refresh."""
-    counts = {}
-    for entry in client_state()["log"]:
-        name = entry["attack_type"]
-        counts[name] = counts.get(name, 0) + 1
-    return jsonify(counts)
+    """Attack-type distribution persisted in SQLite, survives refreshes/restarts."""
+    return jsonify(storage.distribution(client_id()))
 
 
 @app.route("/responses", methods=["GET"])
 def responses():
     """State of the simulated response engine: blocked IPs and recent actions."""
-    engine = client_state()["engine"]
-    if engine is None:
-        return jsonify({"available": False}), 503
+    engine = client_state()
     return jsonify({"available": True, **engine.snapshot()})
 
 
