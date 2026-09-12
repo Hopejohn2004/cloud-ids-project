@@ -62,7 +62,7 @@ XGBoost was selected as the production model based on superior weighted performa
 - **Simulation mode remains the default** — the dashboard classifies sample feature vectors; live analysis requires running `capture_agent.py` against a reachable server (local or temporary public endpoint)
 - **CIC fidelity** — the packet extractor (`flow_features.py`) reproduces the CIC-IDS2017 feature semantics the model was trained on (payload-based lengths, microsecond IAT/burst timing, the dataset's near-zero flag-count artifact). Organic traffic that differs from the benchmark attack shapes may be misclassified, and single-flow statistics cannot separate near-identical web attacks (e.g. XSS vs Brute Force) on their own. `src/synth_attacks.py` generates per-class packet traces that reproduce each attack's benchmark signature for reliable demos
 - **Response engine is simulated, not real enforcement** — BLOCK actions maintain a deny list (persisted to SQLite) and log firewall-style commands (`/responses`); no actual network traffic is dropped. It demonstrates the response layer a production IDS would hand off to a firewall/EDR.
-- **State persists but is per-service** — logs, stats, and the blocked-IP deny list are stored in a local SQLite file (`ids_state.db`); on Render's ephemeral disk this resets on redeploy unless a persistent disk or hosted DB is attached
+- **State persists across redeploys** — logs, stats, and the blocked-IP deny list are stored in a local SQLite file (`ids_state.db`); on Render this lives on a persistent disk mounted at `/data`, so history survives redeploys and instance recycling
 - **Minority class performance** — classes with very few test examples (Bot, Web Attack Brute Force, Web Attack XSS) show lower precision/recall than majority classes
 
 ---
@@ -168,8 +168,10 @@ python src\capture_agent.py --iface "Ethernet" --api http://127.0.0.1:5000 --cli
 python src\capture_agent.py --pcap capture.pcap --dry-run
 ```
 
-Environment: `IDS_API` (default `http://127.0.0.1:5000`) and `IDS_SENSOR_ID`
-(default `IDS-SENSOR`) override the `--api`/`--client` flags.
+Environment: `IDS_API` (default `http://127.0.0.1:5000`), `IDS_SENSOR_ID`
+(default `IDS-SENSOR`), and `IDS_SENSOR_TOKEN` (default empty) override the
+`--api`/`--client`/`--token` flags. Set `--token` whenever the server has
+`IDS_SENSOR_TOKEN` configured, otherwise `/predict` returns `401`.
 
 How it works: packets for a bidirectional flow are accumulated until the flow
 goes quiet (`--idle`, default 60s), then a 70-feature CIC-style vector is
@@ -210,6 +212,8 @@ Tests use a temporary SQLite database so they never touch the real app state. No
 | `IDS_DB_PATH` | `<project root>/ids_state.db` | SQLite database file for logs, stats & the blocked-IP deny list |
 | `CONFIDENCE_THRESHOLD` | `55.0` | Minimum prediction confidence (%) — below this the verdict becomes `UNCERTAIN` |
 | `RATE_LIMIT_PER_MIN` | `60` | Max `/predict` requests per client per minute (0 disables) |
+| `IDS_SENSOR_TOKEN` | *(empty)* | Shared secret for live sensors. When set, `/predict` requires the matching `X-Sensor-Token` header (401 otherwise). Sensors pass it via `--token` or the same env var |
+| `IDS_RETENTION_DAYS` | `0` | Delete detections/actions older than this many days at startup (0 = keep forever) |
 
 Open `http://localhost:5000`
 
@@ -225,6 +229,10 @@ A Render Blueprint config (`render.yaml`) is included. To deploy:
 4. Render auto-detects `render.yaml` → click **Apply**
 
 The app reads the `$PORT` environment variable and runs under Gunicorn, so no code changes are needed between local and cloud. Model artifacts (`best_model.pkl`, `scaler.pkl`, `label_encoder.pkl`) are committed so a fresh clone runs without the raw dataset.
+
+`render.yaml` also attaches a **persistent disk** mounted at `/data` with `IDS_DB_PATH=/data/ids_state.db`, so detection history survives redeploys/recycling on Render's free tier instead of being wiped with the ephemeral filesystem.
+
+The dashboard shows a **LIVE CAPTURE · _N_ SENSORS** badge (green) once one or more capture agents have reported, and falls back to an amber **SIMULATION MODE** badge otherwise. The badge and sensor count come from polling `/health` every 5s.
 
 ---
 

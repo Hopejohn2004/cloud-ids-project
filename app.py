@@ -43,8 +43,20 @@ CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", 55.0))
 # demo being hammered as an unbounded compute endpoint.
 RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", 60))
 
+# Optional shared secret for live capture-agent posts to /predict. When set,
+# requests MUST present the matching X-Sensor-Token header (401 otherwise).
+# Leave empty to allow open access (dashboard demo mode). Sensors pass the
+# same secret via --token / the IDS_SENSOR_TOKEN environment variable.
+SENSOR_TOKEN = os.environ.get("IDS_SENSOR_TOKEN", "")
+
+# Days to keep detections/actions before pruning (0 = keep forever).
+IDS_RETENTION_DAYS = int(os.environ.get("IDS_RETENTION_DAYS", 0))
+
 # ── Persistent state (SQLite, survives restarts) ─────────────────────────────
 storage = SQLiteStore()
+if IDS_RETENTION_DAYS > 0:
+    pruned = storage.prune(IDS_RETENTION_DAYS)
+    print(f"Retention: pruned {pruned} rows older than {IDS_RETENTION_DAYS} days")
 
 # ── Simulated response engine per client ────────────────────────────────────
 # Detection log, stats and response state live in SQLite; each client (browser
@@ -197,6 +209,10 @@ def health():
         "monitoring_mode": "SIMULATION",  # honest: not connected to live traffic capture yet
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "persistence": "sqlite",
+        "sensor_auth": bool(SENSOR_TOKEN),
+        "raw_sensors": len([c for c in storage.list_clients()
+                            if c["client_id"] != "shared"]),
+        "last_activity": storage.last_client_seen(),
         "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     })
 
@@ -215,6 +231,9 @@ def samples():
 
 @app.route("/predict", methods=["POST"])
 def predict():
+    if SENSOR_TOKEN and request.headers.get("X-Sensor-Token") != SENSOR_TOKEN:
+        return jsonify({"error": "Unauthorized sensor. Set IDS_SENSOR_TOKEN."}), 401
+
     if not rate_limiter.allow(client_id() + ":" + (request.remote_addr or "")):
         return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
 

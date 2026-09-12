@@ -93,13 +93,14 @@ class FlowReporter:
     """Converts expired flows to feature vectors and posts them to the API."""
 
     def __init__(self, builder, api, client_id, dry_run=False, out=None,
-                 timeout=10):
+                 timeout=10, token=None):
         self.builder = builder
         self.api = api.rstrip("/")
         self.client_id = client_id
         self.dry_run = dry_run
         self.out = out
         self.timeout = timeout
+        self.token = token
         self.total_flows = 0
 
     def on_flow(self, flow):
@@ -127,10 +128,14 @@ class FlowReporter:
             print(line + "  [DRY-RUN, no API call]")
             return
 
+        headers = {"X-Client-Id": self.client_id}
+        if self.token:
+            headers["X-Sensor-Token"] = self.token
+
         resp = requests.post(
             f"{self.api}/predict",
             json={**features, **meta},
-            headers={"X-Client-Id": self.client_id},
+            headers=headers,
             timeout=self.timeout,
         )
         if resp.status_code == 200:
@@ -209,8 +214,12 @@ def main(argv=None):
                    help="base URL of the Flask API (default http://127.0.0.1:5000)")
     p.add_argument("--client", default=os.environ.get("IDS_SENSOR_ID", "IDS-SENSOR"),
                    help="X-Client-Id used for this sensor's dashboard feed")
+    p.add_argument("--token", default=os.environ.get("IDS_SENSOR_TOKEN", ""),
+                   help="shared secret required when the server sets IDS_SENSOR_TOKEN")
     p.add_argument("--idle", type=float, default=60.0,
                    help="flow idle timeout in seconds (classification latency)")
+    p.add_argument("--timeout", type=float, default=10.0,
+                   help="HTTP request timeout in seconds (raise for slow/cloudy starts)")
     p.add_argument("--dry-run", action="store_true",
                    help="compute features but do not call the API")
     p.add_argument("--out", help="append each flow's JSON to this file")
@@ -218,7 +227,8 @@ def main(argv=None):
 
     builder = FlowAccumulator(idle_timeout=args.idle)
     reporter = FlowReporter(builder, api=args.api, client_id=args.client,
-                            dry_run=args.dry_run, out=args.out)
+                            dry_run=args.dry_run, out=args.out,
+                            timeout=args.timeout, token=args.token or None)
 
     if args.pcap:
         _run_pcap(reporter, args.pcap)

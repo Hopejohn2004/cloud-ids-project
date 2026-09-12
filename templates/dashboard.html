@@ -293,6 +293,7 @@
   </div>
   <div class="header-status">
     <div class="status-badge"><div class="status-dot"></div> ENGINE ONLINE</div>
+    <div class="status-badge" id="headerMode" style="color: var(--amber);">SIMULATION MODE</div>
     <div class="status-badge" style="color: var(--cyan);">ACCURACY: <span id="headerAccuracy">--</span>%</div>
   </div>
 </header>
@@ -434,6 +435,15 @@ async function loadHealth() {
     document.getElementById("specModel").textContent = h.model_name || "Unknown";
     document.getElementById("specClasses").textContent = `${h.class_count} Target`;
     document.getElementById("specFeatures").textContent = `${h.feature_count} Flow`;
+    const modeEl = document.getElementById("headerMode");
+    const sensors = h.raw_sensors || 0;
+    if (sensors > 0) {
+      modeEl.textContent = `LIVE CAPTURE · ${sensors} SENSOR${sensors === 1 ? "" : "S"}`;
+      modeEl.style.color = "var(--green)";
+    } else {
+      modeEl.textContent = "SIMULATION MODE";
+      modeEl.style.color = "var(--amber)";
+    }
   } catch(e) { console.error("Health fetch fail:", e); }
 }
 
@@ -565,7 +575,7 @@ function renderLedger(r) {
   }).join("");
 }
 
-function refreshAll() { loadStats(); loadFeed(); loadResponses(); }
+function refreshAll() { loadHealth(); loadStats(); loadFeed(); loadResponses(); }
 
 loadHealth();
 loadStats();

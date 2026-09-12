@@ -20,6 +20,8 @@ _tmp = os.path.join(tempfile.mkdtemp(prefix="ids_test_"), "test.db")
 os.environ["IDS_DB_PATH"]       = _tmp
 os.environ["RATE_LIMIT_PER_MIN"] = "0"        # disable for tests
 os.environ["CONFIDENCE_THRESHOLD"] = "55.0"
+os.environ["IDS_SENSOR_TOKEN"]  = ""          # auth disabled by default in tests
+os.environ["IDS_RETENTION_DAYS"] = "0"        # no pruning by default in tests
 
 
 @pytest.fixture(scope="session")
