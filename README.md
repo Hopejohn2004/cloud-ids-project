@@ -10,10 +10,15 @@ A machine learning-powered network intrusion detection system built as a Final Y
 
 - **99.79% Accuracy** — XGBoost model, evaluated on an untouched 16,000-record test set
 - **Simulated Real-Time Detection** — Flask API classifies submitted traffic samples instantly
+- **Live Capture Pipeline** — `capture_agent.py` replays pcaps or sniffs live interfaces, extracts CIC-style flow features (70) from packets, and posts them to `/predict` in real time
 - **12 Attack Classes** — DDoS, DoS variants, PortScan, Bot, Brute Force, and more
-- **Automated Response Engine** — severity-based BLOCK/ALERT/ALLOW decisions are actually *executed* (in-memory simulated: blocked source IPs, alert/action log — see `/responses`)
-- **Live Dashboard** — Real-time detection feed, attack distribution chart, and model metrics pulled live from the backend
+- **Automated Response Engine** — severity-based BLOCK/ALERT/ALLOW decisions are actually *executed* (blocked source IPs, alert/action log — see `/responses`)
+- **Persistent State (SQLite)** — detection logs, stats, and the blocked-IP deny list survive restarts (no longer in-memory only)
+- **Confidence Gate** — predictions below a confidence threshold are flagged `UNCERTAIN` instead of committing blindly
+- **Rate Limiting** — per-client throttling on `/predict` so the free demo isn't abused as a compute endpoint
+- **Live Dashboard** — Real-time detection feed, attack-distribution chart, blocked-sources panel & response ledger, all pulled live from the backend
 - **REST API** — `/predict`, `/health`, `/logs`, `/stats`, `/model-info`, `/distribution`, `/responses` endpoints
+- **Automated Tests** — `pytest` suite covering the response engine, all API endpoints, the flow-feature extractor, and model compatibility (38 tests)
 
 ---
 
@@ -54,9 +59,10 @@ XGBoost was selected as the production model based on superior weighted performa
 
 ## ⚠️ Limitations (Honest Disclosure)
 
-- **Simulation-based, not live traffic** — the dashboard classifies sample feature vectors, not packets captured from a real network in real time
-- **Response engine is simulated, not real enforcement** — BLOCK actions maintain an in-memory deny list and log firewall-style commands (`/responses`); no actual network traffic is dropped. It demonstrates the response layer a production IDS would hand off to a firewall/EDR.
-- **In-memory state** — detection logs, stats, and the blocked-IP deny list reset on restart (no database yet)
+- **Simulation mode remains the default** — the dashboard classifies sample feature vectors; live analysis requires running `capture_agent.py` against a reachable server (local or temporary public endpoint)
+- **CIC fidelity** — the packet extractor (`flow_features.py`) reproduces the CIC-IDS2017 feature semantics the model was trained on (payload-based lengths, microsecond IAT/burst timing, the dataset's near-zero flag-count artifact). Organic traffic that differs from the benchmark attack shapes may be misclassified, and single-flow statistics cannot separate near-identical web attacks (e.g. XSS vs Brute Force) on their own. `src/synth_attacks.py` generates per-class packet traces that reproduce each attack's benchmark signature for reliable demos
+- **Response engine is simulated, not real enforcement** — BLOCK actions maintain a deny list (persisted to SQLite) and log firewall-style commands (`/responses`); no actual network traffic is dropped. It demonstrates the response layer a production IDS would hand off to a firewall/EDR.
+- **State persists but is per-service** — logs, stats, and the blocked-IP deny list are stored in a local SQLite file (`ids_state.db`); on Render's ephemeral disk this resets on redeploy unless a persistent disk or hosted DB is attached
 - **Minority class performance** — classes with very few test examples (Bot, Web Attack Brute Force, Web Attack XSS) show lower precision/recall than majority classes
 
 ---
@@ -81,14 +87,27 @@ cloud-ids-project/
 ├── Procfile                    ← Render deployment start command
 ├── render.yaml                 ← Render Blueprint (deployment config)
 ├── runtime.txt                 ← Python version pin (3.12)
-├── requirements.txt            ← Python dependencies
+├── requirements.txt            ← Python dependencies (pinned)
 ├── src/
 │   ├── preprocess_data.py      ← Leakage-free cleaning, scaling, SMOTE
 │   ├── train_model.py          ← Model training & evaluation
 │   ├── extract_samples.py      ← Real attack samples for dashboard simulation
 │   ├── response_engine.py      ← Simulated BLOCK/ALERT/ALLOW response layer
+│   ├── storage.py              ← SQLite persistence for logs/stats/deny list
+│   ├── flow_features.py        ← CIC-style 70-feature extractor (matches the model)
+│   ├── flow_builder.py         ← Bidirectional flow accumulation + idle expiry
+│   ├── capture_agent.py        ← pcap/live capture agent feeding /predict
+│   ├── synth_attacks.py        ← Per-class traffic synthesizer for live demos
 │   ├── fix_label_names.py      ← One-time label encoding cleanup (raw CSVs)
 │   └── regenerate_report.py    ← Regenerates confusion matrix/report without retraining
+├── tests/
+│   ├── conftest.py             ← Test DB + app fixtures
+│   ├── test_response_engine.py ← Response engine unit tests
+│   ├── test_api.py             ← API endpoint tests
+│   ├── test_flow_features.py   ← Flow-feature extractor + model compatibility
+│   └── test_flow_builder.py    ← Flow accumulation & direction logic
+├── demo/
+│   └── pcaps/                  ← Generated per-class traffic (gitignored; see synth_attacks.py)
 ├── templates/
 │   ├── dashboard.html          ← Real-time dashboard UI
 │   └── attack_samples.json     ← Real dataset rows for simulation
@@ -130,6 +149,67 @@ python src/regenerate_report.py
 # 6. Run the app
 python app.py
 ```
+
+Open `http://localhost:5000`
+
+## 🔴 Live Traffic / pcap Mode
+
+`capture_agent.py` turns real packet traffic into the flow vectors the model
+expects and posts them to the API:
+
+```powershell
+# Offline replay of a capture file
+python src\capture_agent.py --pcap capture.pcap --api http://127.0.0.1:5000 --client my-sensor
+
+# Live sniffing on an interface (Windows: use the interface name/ID from scapy)
+python src\capture_agent.py --iface "Ethernet" --api http://127.0.0.1:5000 --client my-sensor
+
+# Classify without posting anywhere (feature extraction debug)
+python src\capture_agent.py --pcap capture.pcap --dry-run
+```
+
+Environment: `IDS_API` (default `http://127.0.0.1:5000`) and `IDS_SENSOR_ID`
+(default `IDS-SENSOR`) override the `--api`/`--client` flags.
+
+How it works: packets for a bidirectional flow are accumulated until the flow
+goes quiet (`--idle`, default 60s), then a 70-feature CIC-style vector is
+derived and sent to `/predict` with the real source/destination IPs, so the
+response engine can block actual attacker addresses.
+
+Because the trained model lives near a tight benchmark manifold,
+`src/synth_attacks.py` searches the flow knob-space to reproduce each attack
+class's signature as replayable pcaps:
+
+```powershell
+python src\synth_attacks.py --out demo\pcaps --trials 8000
+```
+
+This regenerates a `demo/pcaps/` folder with one pcap per class plus a
+`manifest.json`. Replaying them through a running server exercises the entire
+packet → flow → feature → model → response chain (e.g. DDoS → `BLOCK`,
+BENIGN → `ALLOW`).
+
+---
+
+## 🧪 Running Tests
+
+```bash
+# From the project root (venv activated)
+python -m pytest tests/ -v
+```
+
+Tests use a temporary SQLite database so they never touch the real app state. No network access or raw dataset required (the model files are loaded directly for the compatibility checks).
+
+---
+
+## 🔧 Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `5000` | Server port (Render sets this automatically) |
+| `IDS_DB_PATH` | `<project root>/ids_state.db` | SQLite database file for logs, stats & the blocked-IP deny list |
+| `CONFIDENCE_THRESHOLD` | `55.0` | Minimum prediction confidence (%) — below this the verdict becomes `UNCERTAIN` |
+| `RATE_LIMIT_PER_MIN` | `60` | Max `/predict` requests per client per minute (0 disables) |
 
 Open `http://localhost:5000`
 
