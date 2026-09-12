@@ -1,0 +1,141 @@
+"""
+API tests for the Flask app — health, validation, prediction, the confidence
+gate, rate limiting, and persistence across "restarts" via SQLite.
+"""
+
+import json
+
+CLIENT = {"X-Client-Id": "api-test-1"}
+
+
+# ── Health / metadata ────────────────────────────────────────────────────────
+def test_health(client):
+    res = client.get("/health")
+    assert res.status_code == 200
+    h = res.get_json()
+    assert h["status"] == "running"
+    assert h["model_loaded"] is True
+    assert h["model_name"] == "XGBoost"
+    assert h["monitoring_mode"] == "SIMULATION"
+    assert h["persistence"] == "sqlite"
+    assert h["feature_count"] == 70
+    assert h["class_count"] == 12
+
+
+# ── Input validation ─────────────────────────────────────────────────────────
+def test_predict_rejects_non_json(client):
+    res = client.post("/predict", data="nope")
+    assert res.status_code == 400
+
+
+def test_predict_rejects_missing_features(client, sample_feature_vector):
+    bad = {k: v for k, v in sample_feature_vector.items()}
+    bad.pop(next(iter(bad)))
+    res = client.post("/predict", json=bad, headers=CLIENT)
+    assert res.status_code == 400
+    assert "Missing required features" in res.get_json()["error"]
+
+
+def test_predict_rejects_non_numeric(client, sample_feature_vector):
+    bad = dict(sample_feature_vector)
+    k = next(iter(bad))
+    bad[k] = "not-a-number"
+    res = client.post("/predict", json=bad, headers=CLIENT)
+    assert res.status_code == 400
+
+
+def test_predict_rejects_nan(client, sample_feature_vector):
+    bad = dict(sample_feature_vector)
+    k = next(iter(bad))
+    bad[k] = float("nan")
+    res = client.post("/predict", json=bad, headers=CLIENT)
+    assert res.status_code == 400
+
+
+# ── Prediction + response engine integration ─────────────────────────────────
+def test_predict_valid_threat_flow(client):
+    with open("templates/attack_samples.json") as f:
+        samples = json.load(f)
+
+    res = client.post("/predict", json=samples["DDoS"], headers=CLIENT)
+    assert res.status_code == 200
+    entry = res.get_json()
+
+    assert entry["attack_type"] == "DDoS"
+    assert entry["is_threat"] is True
+    assert entry["severity"] == "HIGH"
+    assert entry["action"] == "BLOCK"
+    assert entry["response_executed"] is True
+    assert entry["source_ip"]  # synthetic attacker IP minted
+    assert entry["response_detail"]["blocked_ip"] == entry["source_ip"]
+
+    # The blocked IP must show up on the /responses panel for this client
+    r = client.get("/responses", headers=CLIENT).get_json()
+    assert entry["source_ip"] in r["blocked_ips"]
+
+
+def test_predict_valid_benign_flow(client):
+    with open("templates/attack_samples.json") as f:
+        samples = json.load(f)
+    entry = client.post("/predict", json=samples["BENIGN"], headers=CLIENT).get_json()
+    assert entry["is_threat"] is False
+    assert entry["severity"] == "NONE"
+    assert entry["action"] == "ALLOW"
+
+
+def test_stats_and_distribution_persist_per_client(client):
+    hdr = {"X-Client-Id": "api-test-stats"}
+    with open("templates/attack_samples.json") as f:
+        samples = json.load(f)
+
+    client.post("/predict", json=samples["DDoS"], headers=hdr)
+    client.post("/predict", json=samples["BENIGN"], headers=hdr)
+
+    stats = client.get("/stats", headers=hdr).get_json()
+    assert stats["total"] == 2
+    assert stats["threats"] == 1
+    assert stats["benign"] == 1
+
+    dist = client.get("/distribution", headers=hdr).get_json()
+    assert dist.get("DDoS") == 1
+    assert dist.get("BENIGN") == 1
+
+    logs = client.get("/logs", headers=hdr).get_json()
+    assert len(logs) == 2
+
+    # A DIFFERENT client sees none of this — feeds are isolated per device
+    other = client.get("/stats", headers={"X-Client-Id": "api-test-other"}).get_json()
+    assert other["total"] == 0
+
+
+# ── Confidence gate ───────────────────────────────────────────────────────────
+def test_low_confidence_verdict(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "CONFIDENCE_THRESHOLD", 150.0)
+
+    with open("templates/attack_samples.json") as f:
+        samples = json.load(f)
+
+    entry = client.post(
+        "/predict", json=samples["DDoS"], headers={"X-Client-Id": "api-test-gate"}
+    ).get_json()
+
+    # init-margin above the model's max confidence is impossible, so threshold
+    # 150 always pushes the verdict into UNCERTAIN.
+    assert entry["attack_type"] == "UNCERTAIN"
+    assert entry["severity"] == "LOW"
+    assert entry["recommended_action"] == "ALERT"
+    assert entry["action"] == "ALERT"
+
+
+# ── Rate limiting ────────────────────────────────────────────────────────────
+def test_rate_limit_returns_429(client, app_module, monkeypatch):
+    from app import RateLimiter
+
+    monkeypatch.setattr(app_module, "rate_limiter", RateLimiter(per_minute=2))
+    headers = {"X-Client-Id": "api-test-rl"}
+
+    # Body is invalid JSON → 400, but every attempt still consumes a token.
+    assert client.post("/predict", data="x", headers=headers).status_code == 400
+    assert client.post("/predict", data="x", headers=headers).status_code == 400
+    res = client.post("/predict", data="x", headers=headers)
+    assert res.status_code == 429
