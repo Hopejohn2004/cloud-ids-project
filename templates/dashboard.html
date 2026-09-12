@@ -119,6 +119,33 @@
     /* Layout Sections */
     .layout-top { display: grid; grid-template-columns: 1.2fr 1.5fr 1fr; gap: 16px; margin-bottom: 16px; }
     .layout-bottom { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+    .layout-responses { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-top: 16px; }
+
+    /* Blocked Sources / Response Ledger */
+    .block-list {
+      background: var(--bg-base);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      max-height: 210px;
+      overflow-y: auto;
+      padding: 8px;
+      font-family: var(--font-mono);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .block-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 5px 10px;
+      font-size: 0.7rem;
+      background: var(--bg-panel);
+      border-radius: 3px;
+    }
+    .block-ip { color: var(--red); font-weight: 600; }
+    .block-cmd { color: var(--text-muted); font-size: 0.65rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .panel { 
       background: var(--bg-panel); 
@@ -361,6 +388,21 @@
       </div>
     </div>
   </div>
+
+  <div class="layout-responses">
+    <div class="panel">
+      <div class="panel-header"><span>[#]</span> BLOCKED SOURCES</div>
+      <div class="block-list" id="blockedList">
+        <div class="block-item" style="color:var(--text-muted);">No sources blocked yet — inject a HIGH-severity vector</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><span>[!]</span> RESPONSE LEDGER</div>
+      <div class="block-list" id="responsesList">
+        <div class="block-item" style="color:var(--text-muted);">No mitigation actions taken yet</div>
+      </div>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -424,9 +466,11 @@ async function simulate(attackType) {
       body: JSON.stringify(profile)
     });
     const data = await res.json();
+    if (res.status === 429) { addConsoleError(data.error || "Rate limited"); return; }
     if (data.error) { addConsoleError(data.error); return; }
     updateDashboard(data);
-    loadStats();   // re-sync metric cards + spectrum with the backend log
+    loadStats();          // re-sync metric cards + spectrum with the backend log
+    loadResponses();      // refresh blocked sources / response ledger immediately
   } catch(e) { console.error(e); }
 }
 
@@ -444,12 +488,11 @@ function updateDashboard(d) {
   addFeedItem(d);
 }
 
-function addFeedItem(d) {
-  const feed = document.getElementById("feed");
+function makeFeedRow(d) {
   const el = document.createElement("div");
   el.className = "feed-row "+(d.is_threat?"threat":"safe");
-  
-  const now = new Date().toTimeString().split(' ')[0];
+
+  const now = (d.timestamp || "").split(" ")[1] || new Date().toTimeString().split(' ')[0];
   const side = d.response_detail
     ? ` <span class="feed-act ${d.action.toLowerCase()}">${d.action}${d.response_detail.blocked_ip ? " " + d.response_detail.blocked_ip : ""}</span>`
     : ` <span class="feed-act ${d.action.toLowerCase()}">${d.action}</span>`;
@@ -457,10 +500,78 @@ function addFeedItem(d) {
     <span class="feed-time">${now}</span>
     <span class="feed-type">${d.attack_type}</span>${side}
   `;
-  
-  feed.insertBefore(el, feed.firstChild);
+  return el;
+}
+
+function addFeedItem(d) {
+  const feed = document.getElementById("feed");
+  feed.insertBefore(makeFeedRow(d), feed.firstChild);
   if(feed.children.length > 30) feed.removeChild(feed.lastChild);
 }
+
+// Full feed rebuild from the persisted backend log (survives refreshes/restarts).
+async function loadFeed() {
+  try {
+    const res = await fetch("/logs", { headers: CLIENT_HEADERS });
+    const logs = await res.json();
+    if (!Array.isArray(logs) || !logs.length) return;   // keep the SYS_INIT placeholder
+    const feed = document.getElementById("feed");
+    feed.innerHTML = "";
+    logs.forEach(d => feed.appendChild(makeFeedRow(d)));
+    while (feed.children.length > 30) feed.removeChild(feed.lastChild);
+  } catch(e) { console.error("Feed fetch fail:", e); }
+}
+
+// Blocked sources + response ledger from the /responses endpoint.
+async function loadResponses() {
+  try {
+    const res = await fetch("/responses", { headers: CLIENT_HEADERS });
+    const r = await res.json();
+    renderBlocked(r);
+    renderLedger(r);
+  } catch(e) { console.error("Responses fetch fail:", e); }
+}
+
+function renderBlocked(r) {
+  const el = document.getElementById("blockedList");
+  if (!r || !r.blocked_ips || !r.blocked_ips.length) {
+    el.innerHTML = `<div class="block-item" style="color:var(--text-muted);">No sources blocked yet — inject a HIGH-severity vector</div>`;
+    return;
+  }
+  const ips = r.blocked_ips;
+  el.innerHTML = ips.slice(0, 50).map(ip =>
+    `<div class="block-item"><span class="block-ip">${ip}</span><span class="feed-act block">DENY</span></div>`
+  ).join("") + (ips.length > 50
+    ? `<div class="block-item" style="color:var(--text-muted);">+${ips.length - 50} more blocked source(s)</div>`
+    : "");
+}
+
+function renderLedger(r) {
+  const el = document.getElementById("responsesList");
+  if (!r || !r.recent || !r.recent.length) {
+    el.innerHTML = `<div class="block-item" style="color:var(--text-muted);">No mitigation actions taken yet</div>`;
+    return;
+  }
+  el.innerHTML = r.recent.map(a => {
+    const cls = a.action.toLowerCase();
+    const time = (a.timestamp || "").split(" ")[1] || "";
+    return `<div class="block-item">
+        <span>${time} <b>${a.attack_type}</b></span>
+        <span class="feed-act ${cls}">${a.action}</span>
+      </div>
+      <div class="block-item" style="justify-content:flex-start; background:transparent; padding:0 10px 5px;">
+        <span class="block-cmd">${a.command || a.detail || ""}</span>
+      </div>`;
+  }).join("");
+}
+
+function refreshAll() { loadStats(); loadFeed(); loadResponses(); }
+
+loadHealth();
+loadStats();
+loadResponses();
+loadFeed();
+setInterval(refreshAll, 5000);
 
 function addConsoleError(msg) {
   const feed = document.getElementById("feed");
@@ -499,9 +610,6 @@ function renderDistribution(dist) {
       </div>`;
   }).join("");
 }
-
-loadHealth();
-loadStats();
 </script>
 </body>
 </html>
