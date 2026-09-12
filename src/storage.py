@@ -311,3 +311,36 @@ class SQLiteStore:
             for table in ("detections", "stats", "blocked_ips", "actions"):
                 cur.execute(f"DELETE FROM {table} WHERE client_id=?", (client_id,))
             conn.commit()
+
+    # ── Sensor registry helpers ──────────────────────────────────────────
+    def list_clients(self):
+        with self._cursor() as (conn, cur):
+            cur.execute("SELECT client_id, last_seen FROM clients ORDER BY last_seen DESC")
+            rows = cur.fetchall()
+            conn.commit()
+        return [{"client_id": r["client_id"], "last_seen": r["last_seen"]} for r in rows]
+
+    def last_client_seen(self):
+        with self._cursor() as (conn, cur):
+            cur.execute("SELECT MAX(last_seen) AS ts FROM clients")
+            row = cur.fetchone()
+            conn.commit()
+        return row["ts"] if row else None
+
+    # ── Retention / pruning ──────────────────────────────────────────────
+    def prune(self, days):
+        """Delete detections and actions older than *days* days (all clients).
+        Call once at startup and optionally on a timer for long-running servers.
+        """
+        if days <= 0:
+            return 0
+        cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        from datetime import timedelta
+        cutoff = (cutoff - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+        with self._cursor() as (conn, cur):
+            cur.execute("DELETE FROM detections WHERE timestamp < ?", (cutoff,))
+            d_count = cur.rowcount
+            cur.execute("DELETE FROM actions WHERE timestamp < ?", (cutoff,))
+            a_count = cur.rowcount
+            conn.commit()
+        return d_count + a_count

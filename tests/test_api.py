@@ -127,6 +127,61 @@ def test_low_confidence_verdict(client, app_module, monkeypatch):
     assert entry["action"] == "ALERT"
 
 
+# ── Sensor auth token ─────────────────────────────────────────────────────────
+def test_predict_requires_token_when_enabled(client, app_module, monkeypatch,
+                                             sample_feature_vector):
+    monkeypatch.setattr(app_module, "SENSOR_TOKEN", "s3cret-token")
+    hdr = {"X-Client-Id": "api-test-auth", "X-Sensor-Token": "wrong"}
+
+    res = client.post("/predict", json=sample_feature_vector, headers=hdr)
+    assert res.status_code == 401
+
+    ok = client.post(
+        "/predict", json=sample_feature_vector,
+        headers={"X-Client-Id": "api-test-auth", "X-Sensor-Token": "s3cret-token"},
+    )
+    assert ok.status_code == 200
+
+    # Header-less callers (the browser demo) are also rejected while enabled
+    res = client.post("/predict", json=sample_feature_vector,
+                      headers={"X-Client-Id": "api-test-auth"})
+    assert res.status_code == 401
+
+
+def test_health_reports_sensor_status(client, app_module, monkeypatch):
+    h = client.get("/health").get_json()
+    assert h["sensor_auth"] is False            # empty token by default
+    assert h["raw_sensors"] >= 0
+    assert h["last_activity"] is None or h["last_activity"]
+
+    monkeypatch.setattr(app_module, "SENSOR_TOKEN", "s3cret-token")
+    assert client.get("/health").get_json()["sensor_auth"] is True
+
+
+# ── Retention / pruning ───────────────────────────────────────────────────────
+def test_prune_deletes_old_rows(app_module):
+    storage = app_module.storage
+
+    with storage._cursor() as (conn, cur):
+        cur.execute(
+            """INSERT INTO detections (client_id, timestamp, attack_type,
+               severity, action, recommended_action, response_executed,
+               response_detail, confidence, is_threat)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            ("prune-test", "2020-01-01 00:00:00", "DDoS", "HIGH", "BLOCK", "BLOCK",
+             1, "{}", "99.0%", 1),
+        )
+        conn.commit()
+
+    assert storage.prune(0) == 0                       # retention disabled = no-op
+    pruned = storage.prune(days=1)                     # everything older than 1 day
+    assert pruned >= 1
+
+    with storage._cursor() as (conn, cur):
+        cur.execute("SELECT COUNT(*) FROM detections WHERE client_id=?", ("prune-test",))
+        assert cur.fetchone()[0] == 0
+
+
 # ── Rate limiting ────────────────────────────────────────────────────────────
 def test_rate_limit_returns_429(client, app_module, monkeypatch):
     from app import RateLimiter

@@ -5,6 +5,11 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
+    disk:
+      name: ids-data
+      mountPath: /data
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"
+      - key: IDS_DB_PATH
+        value: /data/ids_state.db
