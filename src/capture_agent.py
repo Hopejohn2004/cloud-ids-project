@@ -23,6 +23,7 @@ ports) are forwarded so the response engine works on genuine attacker IPs.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import sys
@@ -80,6 +81,11 @@ def extract(packet):
         payload_len = len(raw)
         payload_snippet = raw[:_SNIPPET_MAX]
 
+    dst_addr = ipaddress.ip_address(dst)
+    src_addr = ipaddress.ip_address(src)
+    if dst_addr.is_multicast or dst_addr.is_reserved or dst_addr.is_unspecified or src_addr.is_unspecified:
+        return None
+
     return dict(
         timestamp=float(packet.time),
         src_ip=src,
@@ -101,7 +107,7 @@ class FlowReporter:
     """Converts expired flows to feature vectors and posts them to the API."""
 
     def __init__(self, builder, api, client_id, dry_run=False, out=None,
-                 timeout=10, token=None):
+                 timeout=10, token=None, min_pkts=2):
         self.builder = builder
         self.api = api.rstrip("/")
         self.client_id = client_id
@@ -109,9 +115,12 @@ class FlowReporter:
         self.out = out
         self.timeout = timeout
         self.token = token
+        self.min_pkts = min_pkts
         self.total_flows = 0
 
     def on_flow(self, flow):
+        if len(flow.packets) < self.min_pkts:
+            return
         fwd, bwd = self.builder.split_directions(flow)
         features = derive_features(fwd, bwd, destination_port=flow.forward_dport)
         meta = {
@@ -240,12 +249,15 @@ def main(argv=None):
     p.add_argument("--dry-run", action="store_true",
                    help="compute features but do not call the API")
     p.add_argument("--out", help="append each flow's JSON to this file")
+    p.add_argument("--min-pkts", type=int, default=2,
+                   help="skip flows with fewer than this many packets (default 2, cuts noise)")
     args = p.parse_args(argv)
 
     builder = FlowAccumulator(idle_timeout=args.idle)
     reporter = FlowReporter(builder, api=args.api, client_id=args.client,
                             dry_run=args.dry_run, out=args.out,
-                            timeout=args.timeout, token=args.token or None)
+                            timeout=args.timeout, token=args.token or None,
+                            min_pkts=args.min_pkts)
 
     if args.pcap:
         _run_pcap(reporter, args.pcap)
