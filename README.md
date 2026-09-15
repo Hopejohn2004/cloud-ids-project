@@ -275,6 +275,8 @@ $env:IDS_SENSOR_TOKEN="YOUR_TOKEN"
 
 Verify: POST to `/predict` **without** a token (should return `401`), then **with** the token (should return the prediction JSON). The `/health` endpoint exposes `sensor_auth: true` once the variable is set.
 
+Note: the dashboard's **simulation buttons keep working while auth is enabled** — the app itself serves the console, so it issues a short-lived, HMAC-signed, `HttpOnly` same-origin cookie at `/`. The browser sends that cookie automatically on the same-origin `/predict` calls; the shared sensor secret is never placed in page-visible JavaScript. External capture agents (which are not same-origin browsers) must still send `X-Sensor-Token`.
+
 ### Retention policy
 
 Setting `IDS_RETENTION_DAYS` to a nonzero value (e.g. `30`) causes the server to automatically prune detections and actions older than that many days at startup, keeping the database from growing indefinitely on the persistent disk.
