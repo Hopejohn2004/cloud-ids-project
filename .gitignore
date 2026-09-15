@@ -26,4 +26,5 @@ demo/pcaps/
 
 # Scratch / OS files
 .ipynb_checkpoints/
+.pytest_cache/
 .DS_Store

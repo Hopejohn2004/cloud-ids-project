@@ -110,14 +110,17 @@ cloud-ids-project/
 │   ├── test_flow_features.py   ← Flow-feature extractor + model compatibility
 │   └── test_flow_builder.py    ← Flow accumulation & direction logic
 ├── demo/
-│   └── pcaps/                  ← Generated per-class traffic (gitignored; see synth_attacks.py)
+│   ├── pcaps/                   ← Generated per-class traffic (gitignored; see synth_attacks.py)
+│   └── report/                  ← Generated figures + live-pipeline summary CSV
+├── docs/                        ← Academic reports & write-ups (not committed)
 ├── templates/
 │   ├── dashboard.html          ← Real-time dashboard UI
 │   └── attack_samples.json     ← Real dataset rows for simulation
 ├── models/                     ← Saved model artifacts (generated locally)
 ├── notebooks/                  ← Charts and visualizations
 └── data/
-    └── raw/                    ← CIC-IDS2017 CSV files (not committed)
+    ├── raw/                    ← CIC-IDS2017 CSV files (not committed)
+    └── processed/              ← Cleaned/encoded splits (not committed)
 ```
 
 ---
