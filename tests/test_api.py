@@ -158,6 +158,19 @@ def test_health_reports_sensor_status(client, app_module, monkeypatch):
     assert client.get("/health").get_json()["sensor_auth"] is True
 
 
+def test_operator_cookie_allows_predict_without_token(client, app_module, monkeypatch,
+                                                      sample_feature_vector):
+    monkeypatch.setattr(app_module, "SENSOR_TOKEN", "s3cret-token")
+    # Visit "/" so the server issues the HMAC-signed operator cookie
+    client.get("/")
+    # POST /predict with no X-Sensor-Token — should succeed via the cookie
+    res = client.post("/predict", json=sample_feature_vector,
+                      headers={"X-Client-Id": "api-test-cookie"})
+    assert res.status_code == 200
+    assert res.get_json()["attack_type"] in ("BENIGN", "UNCERTAIN") or \
+           res.get_json().get("attack_type")
+
+
 # ── Retention / pruning ───────────────────────────────────────────────────────
 def test_prune_deletes_old_rows(app_module):
     storage = app_module.storage

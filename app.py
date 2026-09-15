@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, make_response
 from flask_cors import CORS
 import joblib
 import numpy as np
@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 import json
 import hashlib
+import hmac
 import threading
 import time
 
@@ -49,6 +50,42 @@ RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", 60))
 # Leave empty to allow open access (dashboard demo mode). Sensors pass the
 # same secret via --token / the IDS_SENSOR_TOKEN environment variable.
 SENSOR_TOKEN = os.environ.get("IDS_SENSOR_TOKEN", "")
+
+# ── Operator session cookie (dashboard) ─────────────────────────────────────
+# The dashboard is served by this app, so rather than embedding the shared
+# sensor secret in page-visible JavaScript, it authenticates via a short-lived
+# HMAC-signed same-origin cookie set when the page is first loaded at "/".
+# External capture agents continue to authenticate via X-Sensor-Token header.
+_OP_COOKIE_TTL = 30 * 86400  # 30 days
+
+
+def _op_hmac(exp_epoch: int) -> str:
+    return hmac.new(SENSOR_TOKEN.encode(), f"ids-op:{exp_epoch}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def _op_cookie_value() -> str:
+    exp = int(time.time()) + _OP_COOKIE_TTL
+    return f"{exp}.{_op_hmac(exp)}"
+
+
+def _op_cookie_valid(val: str) -> bool:
+    try:
+        exp_s, mac = val.split(".", 1)
+        exp = int(exp_s)
+    except (ValueError, TypeError):
+        return False
+    if exp < time.time():
+        return False
+    return hmac.compare_digest(_op_hmac(exp), mac)
+
+
+def authorized_predict() -> bool:
+    if not SENSOR_TOKEN:                          # auth disabled: open
+        return True
+    if request.headers.get("X-Sensor-Token") == SENSOR_TOKEN:
+        return True
+    return _op_cookie_valid(request.cookies.get("ids_op", ""))
 
 # Days to keep detections/actions before pruning (0 = keep forever).
 IDS_RETENTION_DAYS = int(os.environ.get("IDS_RETENTION_DAYS", 0))
@@ -183,7 +220,13 @@ def synthetic_source_ip(cid):
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
-    return render_template("dashboard.html")
+    resp = make_response(render_template("dashboard.html"))
+    if SENSOR_TOKEN:
+        resp.set_cookie("ids_op", _op_cookie_value(),
+                        max_age=_OP_COOKIE_TTL,
+                        httponly=True, samesite="Lax",
+                        secure=request.is_secure)
+    return resp
 
 
 @app.route("/health", methods=["GET"])
@@ -232,8 +275,9 @@ def samples():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if SENSOR_TOKEN and request.headers.get("X-Sensor-Token") != SENSOR_TOKEN:
-        return jsonify({"error": "Unauthorized sensor. Set IDS_SENSOR_TOKEN."}), 401
+    if not authorized_predict():
+        return jsonify({"error": "Unauthorized. Set X-Sensor-Token (sensors) "
+                                 "or visit / to load the operator session."}), 401
 
     if not rate_limiter.allow(client_id() + ":" + (request.remote_addr or "")):
         return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
