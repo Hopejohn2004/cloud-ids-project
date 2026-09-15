@@ -59,6 +59,11 @@ SENSOR_TOKEN = os.environ.get("IDS_SENSOR_TOKEN", "")
 _OP_COOKIE_TTL = 30 * 86400  # 30 days
 
 
+# Last time a real capture sensor posted (not the browser sim buttons).
+_LAST_SENSOR_POST = [0.0]
+SENSOR_IDLE_SECONDS = 60.0
+
+
 def _op_hmac(exp_epoch: int) -> str:
     return hmac.new(SENSOR_TOKEN.encode(), f"ids-op:{exp_epoch}".encode(),
                     hashlib.sha256).hexdigest()
@@ -240,6 +245,7 @@ def health():
     metrics = MODEL_METADATA.get("metrics", {})
     sensors = len([c for c in storage.list_clients()
                    if c["client_id"] != "shared"])
+    sensor_active = bool(sensors) and (time.time() - _LAST_SENSOR_POST[0]) < SENSOR_IDLE_SECONDS
     return jsonify({
         "status":               "running",
         "model_loaded":         True,
@@ -258,7 +264,12 @@ def health():
             "macro_f1":  round(metrics.get("Macro F1", 0), 2),
         },
         "trained_at":  MODEL_METADATA.get("trained_at"),
-        "monitoring_mode": "LIVE_CAPTURE" if sensors else "SIMULATION",
+        "monitoring_mode": ("LIVE_CAPTURE" if sensor_active
+                            else ("MONITORING_IDLE" if sensors else "SIMULATION")),
+        "sensor_active": sensor_active,
+        "sensor_last_post": (datetime.fromtimestamp(_LAST_SENSOR_POST[0])
+                             .strftime("%Y-%m-%d %H:%M:%S")
+                             if _LAST_SENSOR_POST[0] else None),
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "persistence": "sqlite",
         "sensor_auth": bool(SENSOR_TOKEN),
@@ -293,6 +304,12 @@ def predict():
 
     if data is None:
         return jsonify({"error": "Request body must be valid JSON."}), 400
+
+    # A real sensor carries flow metadata (source_ip) and/or the sensor token —
+    # the browser's simulation buttons do neither. Used for the LIVE/IDLE badge.
+    if (isinstance(data, dict) and data.get("source_ip")) or \
+            request.headers.get("X-Sensor-Token") == SENSOR_TOKEN:
+        _LAST_SENSOR_POST[0] = time.time()
 
     # Optional network-flow context fields (not used for prediction, just logging)
     meta_fields = {
