@@ -56,7 +56,8 @@ def extract(packet):
     else:
         return None
 
-    src, dst, proto = ip.src, ip.dst, ip.proto
+    src, dst = ip.src, ip.dst
+    proto = ip.nh if IPv6 in packet else ip.proto   # IPv6 uses 'nh' (next header), IPv4 uses 'proto'
     sport = dport = 0
     l4_header_len = tcp_window = payload_len = 0
     flags = ""
@@ -65,7 +66,7 @@ def extract(packet):
     if TCP in packet:
         tcp = packet[TCP]
         sport, dport = tcp.sport, tcp.dport
-        l4_header_len = tcp.dataofs * 4
+        l4_header_len = (tcp.dataofs or 0) * 4
         tcp_window = tcp.window
         raw = bytes(tcp.payload)
         payload_len = len(raw)
@@ -86,7 +87,7 @@ def extract(packet):
         dst_ip=dst,
         dst_port=int(dport),
         protocol=int(proto),
-        ip_len=int(ip.len),
+        ip_len=int(ip.len if IP in packet else 40 + (ip.plen or 0)),
         ip_header_len=int((ip.ihl if IP in packet else 40) * 4),
         l4_header_len=l4_header_len,
         tcp_window=tcp_window,
@@ -166,7 +167,11 @@ def _run_pcap(reporter, path):
     builder = reporter.builder
     with PcapReader(path) as reader:
         for pkt in reader:
-            fields = extract(pkt)
+            try:
+                fields = extract(pkt)
+            except Exception as exc:
+                print(f"[warn] skipping unparseable packet: {exc}")
+                continue
             if not fields:
                 continue
             for flow in builder.add(**fields):
@@ -202,7 +207,11 @@ def _run_live(reporter, iface):
 
 
 def _ingest(builder, reporter, pkt):
-    fields = extract(pkt)
+    try:
+        fields = extract(pkt)
+    except Exception as exc:                     # malformed/odd packets must not kill the sniffer
+        print(f"[warn] skipping unparseable packet: {exc}")
+        return
     if not fields:
         return
     for flow in builder.add(**fields):
