@@ -324,7 +324,7 @@
       <div class="monitor-box">
         <div class="monitor-target" id="attackLabel">SYSTEM IDLE</div>
         <div class="tag-group" id="detectionTags">
-          <span class="sys-tag conf">AWAITING VECTOR SIMULATION</span>
+          <span class="sys-tag conf" id="lastStateTag">AWAITING VECTOR SIMULATION</span>
         </div>
       </div>
     </div>
@@ -430,20 +430,28 @@ async function loadHealth() {
   try {
     const res = await fetch("/health");
     const h = await res.json();
-    document.getElementById("headerModel").textContent = (h.model_name || "").toUpperCase();
-    document.getElementById("headerAccuracy").textContent = h.metrics.accuracy;
-    document.getElementById("specModel").textContent = h.model_name || "Unknown";
-    document.getElementById("specClasses").textContent = `${h.class_count} Target`;
-    document.getElementById("specFeatures").textContent = `${h.feature_count} Flow`;
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val !== undefined && val !== null) el.textContent = val;
+    };
+    const live = h.monitoring_mode === "LIVE_CAPTURE" || (h.raw_sensors || 0) > 0;
     const modeEl = document.getElementById("headerMode");
-    const sensors = h.raw_sensors || 0;
-    if (sensors > 0) {
-      modeEl.textContent = `LIVE CAPTURE · ${sensors} SENSOR${sensors === 1 ? "" : "S"}`;
-      modeEl.style.color = "var(--green)";
-    } else {
-      modeEl.textContent = "SIMULATION MODE";
-      modeEl.style.color = "var(--amber)";
+    if (modeEl) {
+      if (live) {
+        modeEl.textContent = `LIVE CAPTURE · ${h.raw_sensors || 0} SENSOR${h.raw_sensors === 1 ? "" : "S"}`;
+        modeEl.style.color = "var(--green)";
+      } else {
+        modeEl.textContent = "SIMULATION MODE";
+        modeEl.style.color = "var(--amber)";
+      }
     }
+    const lastTag = document.getElementById("lastStateTag");
+    if (lastTag) lastTag.textContent = live ? "MONITORING LIVE TRAFFIC" : "AWAITING VECTOR SIMULATION";
+    set("headerModel", (h.model_name || "").toUpperCase());
+    set("headerAccuracy", h.metrics ? h.metrics.accuracy : null);
+    set("specModel", h.model_name || "Unknown");
+    set("specClasses", h.class_count ? `${h.class_count} Target` : null);
+    set("specFeatures", h.feature_count ? `${h.feature_count} Flow` : null);
   } catch(e) { console.error("Health fetch fail:", e); }
 }
 
