@@ -1,0 +1,13 @@
+class,pcap,model_prob_pct,pcap_top1,resolved_by,search_class_prob_pct,expected_action,severity
+BENIGN,benign.pcap,100.0,BENIGN,model,100.0,ALLOW,NONE
+Bot,bot.pcap,99.93,Bot,model,99.9,BLOCK,HIGH
+DDoS,ddos.pcap,79.53,DDoS,model,79.5,BLOCK,HIGH
+DoS GoldenEye,dos_goldeneye.pcap,2.05,DDoS,model,2.0,BLOCK,HIGH
+DoS Hulk,dos_hulk.pcap,99.42,DoS Hulk,model,99.4,BLOCK,HIGH
+DoS Slowhttptest,dos_slowhttptest.pcap,99.99,DoS Slowhttptest,model,100.0,BLOCK,HIGH
+DoS slowloris,dos_slowloris.pcap,2.64,Bot,model,2.6,BLOCK,HIGH
+FTP-Patator,ftp-patator.pcap,99.96,FTP-Patator,model,100.0,ALERT,MEDIUM
+PortScan,portscan.pcap,62.59,PortScan,model,62.6,ALERT,MEDIUM
+SSH-Patator,ssh-patator.pcap,76.1,SSH-Patator,model,76.1,ALERT,MEDIUM
+Web Attack - Brute Force,web_attack_-_brute_force.pcap,,n/a (L7),l7,72.0,BLOCK,HIGH
+Web Attack - XSS,web_attack_-_xss.pcap,,n/a (L7),l7,72.0,BLOCK,HIGH
