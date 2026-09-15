@@ -60,10 +60,10 @@ XGBoost was selected as the production model based on superior weighted performa
 ## ⚠️ Limitations (Honest Disclosure)
 
 - **Simulation mode remains the default** — the dashboard classifies sample feature vectors; live analysis requires running `capture_agent.py` against a reachable server (local or temporary public endpoint)
-- **CIC fidelity** — the packet extractor (`flow_features.py`) reproduces the CIC-IDS2017 feature semantics the model was trained on (payload-based lengths, microsecond IAT/burst timing, the dataset's near-zero flag-count artifact). Organic traffic that differs from the benchmark attack shapes may be misclassified, and single-flow statistics cannot separate near-identical web attacks (e.g. XSS vs Brute Force) on their own. `src/synth_attacks.py` generates per-class packet traces that reproduce each attack's benchmark signature for reliable demos
+- **CIC fidelity** — the packet extractor (`flow_features.py`) reproduces the CIC-IDS2017 feature semantics the model was trained on (payload-based lengths, microsecond IAT/burst timing, the dataset's near-zero flag-count artifact). Organic traffic that differs from the benchmark attack shapes may be misclassified, and single-flow statistics cannot separate near-identical web attacks (e.g. XSS vs Brute Force) on their own. A **layer-7 signature overlay** (`src/l7_signatures.py`) reads captured payload bytes and, only when the payload clearly shows a script tag or repeated login fields, promotes a benign/ambiguous/weak-web verdict into `Web Attack - XSS` / `Web Attack - Brute Force` — it never downgrades any verdict. `src/synth_attacks.py` generates per-class packet traces (including marker-carrying web sessions) that reproduce each attack's benchmark signature for reliable demos
 - **Response engine is simulated, not real enforcement** — BLOCK actions maintain a deny list (persisted to SQLite) and log firewall-style commands (`/responses`); no actual network traffic is dropped. It demonstrates the response layer a production IDS would hand off to a firewall/EDR.
 - **State persists across redeploys** — logs, stats, and the blocked-IP deny list are stored in a local SQLite file (`ids_state.db`); on Render this lives on a persistent disk mounted at `/data`, so history survives redeploys and instance recycling
-- **Minority class performance** — classes with very few test examples (Bot, Web Attack Brute Force, Web Attack XSS) show lower precision/recall than majority classes
+- **Minority class performance** — classes with very few test examples (Bot, Web Attack Brute Force, Web Attack XSS) show lower precision/recall than majority classes; GoldenEye traffic is statistically inseparable from DoS Hulk (both are blocked as a DoS), and Slowloris-shaped flows may read as the adjacent `Bot` class (still blocked)
 
 ---
 
@@ -97,6 +97,7 @@ cloud-ids-project/
 │   ├── flow_features.py        ← CIC-style 70-feature extractor (matches the model)
 │   ├── flow_builder.py         ← Bidirectional flow accumulation + idle expiry
 │   ├── capture_agent.py        ← pcap/live capture agent feeding /predict
+│   ├── l7_signatures.py        ← Layer-7 payload overlay (XSS vs brute force)
 │   ├── synth_attacks.py        ← Per-class traffic synthesizer for live demos
 │   ├── fix_label_names.py      ← One-time label encoding cleanup (raw CSVs)
 │   └── regenerate_report.py    ← Regenerates confusion matrix/report without retraining
@@ -104,6 +105,7 @@ cloud-ids-project/
 │   ├── conftest.py             ← Test DB + app fixtures
 │   ├── test_response_engine.py ← Response engine unit tests
 │   ├── test_api.py             ← API endpoint tests
+│   ├── test_l7_signatures.py   ← L7 overlay marker + fusion tests
 │   ├── test_flow_features.py   ← Flow-feature extractor + model compatibility
 │   └── test_flow_builder.py    ← Flow accumulation & direction logic
 ├── demo/
@@ -187,9 +189,16 @@ python src\synth_attacks.py --out demo\pcaps --trials 8000
 ```
 
 This regenerates a `demo/pcaps/` folder with one pcap per class plus a
-`manifest.json`. Replaying them through a running server exercises the entire
-packet → flow → feature → model → response chain (e.g. DDoS → `BLOCK`,
-BENIGN → `ALLOW`).
+`manifest.json` (each entry records the model's probability, its top-1 label,
+the flow mode, and `resolved_by: "model"` vs `"l7"`). The search is seeded
+deterministically — regenerating produces byte-identical pcaps. Attack classes
+that the model misreads as benign (notably GoldenEye, which is statistically
+inseparable from DoS Hulk) fall back to the best *threat-shaped* neighbour so
+every attack pcap exercises a real block. `Web Attack - XSS` and
+`Web Attack - Brute Force` pcaps carry genuine script/login payloads that the
+L7 overlay resolves at 72% confidence. Replaying them through a running server
+exercises the entire packet → flow → feature → model → (L7) → response chain
+(e.g. DDoS → `BLOCK`, XSS → `BLOCK`, BENIGN → `ALLOW`).
 
 ---
 

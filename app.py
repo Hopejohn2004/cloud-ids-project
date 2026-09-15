@@ -12,6 +12,7 @@ import time
 
 from src.storage import SQLiteStore
 from src.response_engine import ResponseEngine
+from src.l7_signatures import fuse as fuse_verdict
 
 app = Flask(__name__)
 CORS(app)
@@ -271,6 +272,15 @@ def predict():
         recommended_action = "ALERT"
     else:
         attack_name = CLASS_NAMES[pred_idx] if pred_idx < len(CLASS_NAMES) else "UNKNOWN"
+        severity, recommended_action = get_severity_action(attack_name)
+
+    # Conservative L7 overlay: unambiguous payload markers (script tags for XSS,
+    # repeated login fields for brute force) can only RAISE a benign/ambiguous/
+    # web-statistics verdict into the matching attack class; other classes are
+    # untouched. See src/l7_signatures.py.
+    l7_hints = data.get("l7") if isinstance(data.get("l7"), dict) else {}
+    if l7_hints:
+        attack_name, confidence = fuse_verdict(attack_name, confidence, l7_hints)
         severity, recommended_action = get_severity_action(attack_name)
 
     is_threat = bool(attack_name != "BENIGN")

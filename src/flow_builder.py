@@ -51,7 +51,7 @@ class FlowAccumulator:
 
     def add(self, timestamp, src_ip, src_port, dst_ip, dst_port, protocol,
             *, ip_len=0, ip_header_len=0, l4_header_len=0, tcp_window=0,
-            payload_len=0, flags=""):
+            payload_len=0, flags="", payload_snippet=b""):
         """
         Ingest one packet. Returns a list of flows that expired as a result
         (flows idle > idle_timeout). The newly-added flow is never returned.
@@ -85,6 +85,7 @@ class FlowAccumulator:
                     payload_len=payload_len,
                     flags=flags,
                     is_forward=is_forward,
+                    payload_snippet=payload_snippet,
                 )
             )
             flow.last_seen = max(flow.last_seen, timestamp)
