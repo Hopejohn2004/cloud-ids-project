@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.flow_builder import FlowAccumulator
 from src.flow_features import derive_features
+from src.l7_signatures import _SNIPPET_MAX, hints_from_snippets
 
 try:
     from scapy.layers.inet import IP, TCP, UDP
@@ -59,19 +60,24 @@ def extract(packet):
     sport = dport = 0
     l4_header_len = tcp_window = payload_len = 0
     flags = ""
+    payload_snippet = b""
 
     if TCP in packet:
         tcp = packet[TCP]
         sport, dport = tcp.sport, tcp.dport
         l4_header_len = tcp.dataofs * 4
         tcp_window = tcp.window
-        payload_len = len(bytes(tcp.payload))
+        raw = bytes(tcp.payload)
+        payload_len = len(raw)
+        payload_snippet = raw[:_SNIPPET_MAX]
         flags = str(tcp.flags).upper()
     elif UDP in packet:
         udp = packet[UDP]
         sport, dport = udp.sport, udp.dport
         l4_header_len = 8
-        payload_len = len(bytes(udp.payload))
+        raw = bytes(udp.payload)
+        payload_len = len(raw)
+        payload_snippet = raw[:_SNIPPET_MAX]
 
     return dict(
         timestamp=float(packet.time),
@@ -86,6 +92,7 @@ def extract(packet):
         tcp_window=tcp_window,
         payload_len=payload_len,
         flags=flags,
+        payload_snippet=payload_snippet,
     )
 
 
@@ -112,10 +119,11 @@ class FlowReporter:
             "source_port": flow.forward_sport,
             "destination_port": flow.forward_dport,
         }
+        l7 = hints_from_snippets(p.payload_snippet for p in flow.packets)
         self.total_flows += 1
-        self._emit(features, meta, flow)
+        self._emit(features, meta, l7, flow)
 
-    def _emit(self, features, meta, flow):
+    def _emit(self, features, meta, l7, flow):
         stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(flow.first_seen))
         line = (f"[{stamp}] flow {flow.forward_src}:{flow.forward_sport} -> "
                 f"{meta['destination_ip']}:{flow.forward_dport} "
@@ -123,7 +131,7 @@ class FlowReporter:
 
         if self.out:
             with open(self.out, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"meta": meta, "features": features}) + "\n")
+                f.write(json.dumps({"meta": meta, "features": features, "l7": l7}) + "\n")
         if self.dry_run:
             print(line + "  [DRY-RUN, no API call]")
             return
@@ -134,7 +142,7 @@ class FlowReporter:
 
         resp = requests.post(
             f"{self.api}/predict",
-            json={**features, **meta},
+            json={**features, **meta, "l7": l7},
             headers=headers,
             timeout=self.timeout,
         )

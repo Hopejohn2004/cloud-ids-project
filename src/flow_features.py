@@ -53,6 +53,7 @@ class FlowPacket:
     payload_len: int = 0      # bytes of L4 payload
     flags: str = ""           # TCP flag letters e.g. "FS" (S,SYN A,ACK F,FIN ...)
     is_forward: bool = True   # True if packet belongs to flow initiator
+    payload_snippet: bytes = b""  # first bytes of L4 payload (for L7 hints)
 
 
 # ── The exact model feature order (models/feature_names.json) ────────────────

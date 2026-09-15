@@ -182,6 +182,47 @@ def test_prune_deletes_old_rows(app_module):
         assert cur.fetchone()[0] == 0
 
 
+# ── Layer-7 overlay fusion ─────────────────────────────────────────────────────
+def test_l7_xss_overlay_promotes_benign_stats(client, sample_feature_vector):
+    hdr = {"X-Client-Id": "api-test-xss"}
+    res = client.post("/predict", json={
+        **sample_feature_vector, "l7": {"xss": True, "brute_force": False},
+    }, headers=hdr)
+    assert res.status_code == 200
+    entry = res.get_json()
+    assert entry["attack_type"] == "Web Attack - XSS"
+    assert entry["is_threat"] is True
+    assert entry["severity"] == "HIGH"
+    assert entry["action"] == "BLOCK"
+    assert entry["confidence"] == "72.0%"
+
+
+def test_l7_bruteforce_overlay(client, sample_feature_vector):
+    hdr = {"X-Client-Id": "api-test-bf"}
+    entry = client.post("/predict", json={
+        **sample_feature_vector, "l7": {"xss": False, "brute_force": True},
+    }, headers=hdr).get_json()
+    assert entry["attack_type"] == "Web Attack - Brute Force"
+    assert entry["is_threat"] is True
+
+
+def test_l7_does_not_override_ddos(client):
+    with open("templates/attack_samples.json") as f:
+        samples = json.load(f)
+    entry = client.post("/predict", json={
+        **samples["DDoS"], "l7": {"xss": True, "brute_force": True},
+    }, headers={"X-Client-Id": "api-test-nofuse"}).get_json()
+    assert entry["attack_type"] == "DDoS"
+
+
+def test_l7_absent_payload_unchanged(client, sample_feature_vector):
+    entry = client.post("/predict", json=sample_feature_vector,
+                        headers={"X-Client-Id": "api-test-nol7"}).get_json()
+    # No l7 field → the original verdict path runs untouched (still BENIGN).
+    assert entry["attack_type"] == "BENIGN"
+    assert entry["is_threat"] is False
+
+
 # ── Rate limiting ────────────────────────────────────────────────────────────
 def test_rate_limit_returns_429(client, app_module, monkeypatch):
     from app import RateLimiter
