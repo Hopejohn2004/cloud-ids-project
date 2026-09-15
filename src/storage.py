@@ -168,13 +168,20 @@ class SQLiteStore:
             )
             conn.commit()
 
-    def recent_detections(self, client_id, limit=20):
+    def recent_detections(self, client_id=None, limit=20):
+        """Most recent detections. client_id=None aggregates all clients."""
         with self._cursor() as (conn, cur):
-            cur.execute(
-                """SELECT * FROM detections WHERE client_id=?
-                   ORDER BY id DESC LIMIT ?""",
-                (client_id, limit),
-            )
+            if client_id is None:
+                cur.execute(
+                    "SELECT * FROM detections ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    """SELECT * FROM detections WHERE client_id=?
+                       ORDER BY id DESC LIMIT ?""",
+                    (client_id, limit),
+                )
             rows = cur.fetchall()
             conn.commit()
         return [self._row_to_detection(r) for r in rows]
@@ -197,38 +204,51 @@ class SQLiteStore:
             "destination_port":    row["destination_port"],
         }
 
-    def stats(self, client_id):
+    def stats(self, client_id=None):
         defaults = {"total": 0, "threats": 0, "benign": 0}
         with self._cursor() as (conn, cur):
-            cur.execute(
-                "SELECT total, threats, benign FROM stats WHERE client_id=?",
-                (client_id,),
-            )
+            if client_id is None:
+                cur.execute("SELECT SUM(total) total, SUM(threats) threats, "
+                            "SUM(benign) benign FROM stats")
+            else:
+                cur.execute(
+                    "SELECT total, threats, benign FROM stats WHERE client_id=?",
+                    (client_id,),
+                )
             row = cur.fetchone()
             conn.commit()
-        if row is None:
+        if row is None or row["total"] is None:
             return defaults
         return {"total": row["total"], "threats": row["threats"], "benign": row["benign"]}
 
-    def distribution(self, client_id):
+    def distribution(self, client_id=None):
         with self._cursor() as (conn, cur):
-            cur.execute(
-                """SELECT attack_type AS name, COUNT(*) AS n
-                   FROM detections WHERE client_id=?
-                   GROUP BY attack_type ORDER BY n DESC""",
-                (client_id,),
-            )
+            if client_id is None:
+                cur.execute(
+                    """SELECT attack_type AS name, COUNT(*) AS n
+                       FROM detections GROUP BY attack_type ORDER BY n DESC""",
+                )
+            else:
+                cur.execute(
+                    """SELECT attack_type AS name, COUNT(*) AS n
+                       FROM detections WHERE client_id=?
+                       GROUP BY attack_type ORDER BY n DESC""",
+                    (client_id,),
+                )
             rows = cur.fetchall()
             conn.commit()
         return {r["name"]: r["n"] for r in rows}
 
     # ── Response engine state ─────────────────────────────────────────────
-    def blocked_ips(self, client_id):
+    def blocked_ips(self, client_id=None):
         with self._cursor() as (conn, cur):
-            cur.execute(
-                "SELECT ip FROM blocked_ips WHERE client_id=? ORDER BY ip",
-                (client_id,),
-            )
+            if client_id is None:
+                cur.execute("SELECT DISTINCT ip FROM blocked_ips ORDER BY ip")
+            else:
+                cur.execute(
+                    "SELECT ip FROM blocked_ips WHERE client_id=? ORDER BY ip",
+                    (client_id,),
+                )
             rows = cur.fetchall()
             conn.commit()
         return [r["ip"] for r in rows]
@@ -264,13 +284,19 @@ class SQLiteStore:
             )
             conn.commit()
 
-    def recent_actions(self, client_id, limit=20):
+    def recent_actions(self, client_id=None, limit=20):
         with self._cursor() as (conn, cur):
-            cur.execute(
-                """SELECT * FROM actions WHERE client_id=?
-                   ORDER BY id DESC LIMIT ?""",
-                (client_id, limit),
-            )
+            if client_id is None:
+                cur.execute(
+                    """SELECT * FROM actions ORDER BY id DESC LIMIT ?""",
+                    (limit,),
+                )
+            else:
+                cur.execute(
+                    """SELECT * FROM actions WHERE client_id=?
+                       ORDER BY id DESC LIMIT ?""",
+                    (client_id, limit),
+                )
             rows = cur.fetchall()
             conn.commit()
         return [
@@ -289,14 +315,17 @@ class SQLiteStore:
             for r in rows
         ]
 
-    def action_counts(self, client_id):
+    def action_counts(self, client_id=None):
         counts = {"block": 0, "alert": 0, "allow": 0}
         with self._cursor() as (conn, cur):
-            cur.execute(
-                "SELECT action, COUNT(*) AS n FROM actions WHERE client_id=? "
-                "GROUP BY action",
-                (client_id,),
-            )
+            if client_id is None:
+                cur.execute("SELECT action, COUNT(*) AS n FROM actions GROUP BY action")
+            else:
+                cur.execute(
+                    "SELECT action, COUNT(*) AS n FROM actions WHERE client_id=? "
+                    "GROUP BY action",
+                    (client_id,),
+                )
             rows = cur.fetchall()
             conn.commit()
         for r in rows:

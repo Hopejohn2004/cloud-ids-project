@@ -452,8 +452,8 @@ async function loadHealth() {
 async function loadStats() {
   try {
     const [st, dist] = await Promise.all([
-      fetch("/stats", { headers: CLIENT_HEADERS }).then(r => r.json()),
-      fetch("/distribution", { headers: CLIENT_HEADERS }).then(r => r.json())
+      fetch("/stats?scope=global", { headers: CLIENT_HEADERS }).then(r => r.json()),
+      fetch("/distribution?scope=global", { headers: CLIENT_HEADERS }).then(r => r.json())
     ]);
     document.getElementById("totalCount").textContent  = (st.total || 0).toLocaleString();
     document.getElementById("threatCount").textContent = (st.threats || 0).toLocaleString();
@@ -522,7 +522,7 @@ function addFeedItem(d) {
 // Full feed rebuild from the persisted backend log (survives refreshes/restarts).
 async function loadFeed() {
   try {
-    const res = await fetch("/logs", { headers: CLIENT_HEADERS });
+    const res = await fetch("/logs?scope=global", { headers: CLIENT_HEADERS });
     const logs = await res.json();
     if (!Array.isArray(logs) || !logs.length) return;   // keep the SYS_INIT placeholder
     const feed = document.getElementById("feed");
@@ -535,7 +535,7 @@ async function loadFeed() {
 // Blocked sources + response ledger from the /responses endpoint.
 async function loadResponses() {
   try {
-    const res = await fetch("/responses", { headers: CLIENT_HEADERS });
+    const res = await fetch("/responses?scope=global", { headers: CLIENT_HEADERS });
     const r = await res.json();
     renderBlocked(r);
     renderLedger(r);

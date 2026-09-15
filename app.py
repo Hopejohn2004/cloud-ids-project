@@ -43,7 +43,7 @@ CONFIDENCE_THRESHOLD = float(os.environ.get("CONFIDENCE_THRESHOLD", 55.0))
 
 # Simple per-client rate limit for /predict (0 disables). Prevents the free
 # demo being hammered as an unbounded compute endpoint.
-RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", 60))
+RATE_LIMIT_PER_MIN = int(os.environ.get("RATE_LIMIT_PER_MIN", 600))
 
 # Optional shared secret for live capture-agent posts to /predict. When set,
 # requests MUST present the matching X-Sensor-Token header (401 otherwise).
@@ -217,6 +217,12 @@ def synthetic_source_ip(cid):
     return f"10.{int(digest[0:2], 16) % 256}.{int(digest[2:4], 16) % 256}.{n % 254 + 1}"
 
 
+def console_scope():
+    """Dashboard console requests scope=global so live sensors are visible;
+    API callers without it keep their own per-client feed."""
+    return None if request.args.get("scope") == "global" else client_id()
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
@@ -232,6 +238,8 @@ def index():
 @app.route("/health", methods=["GET"])
 def health():
     metrics = MODEL_METADATA.get("metrics", {})
+    sensors = len([c for c in storage.list_clients()
+                   if c["client_id"] != "shared"])
     return jsonify({
         "status":               "running",
         "model_loaded":         True,
@@ -250,12 +258,11 @@ def health():
             "macro_f1":  round(metrics.get("Macro F1", 0), 2),
         },
         "trained_at":  MODEL_METADATA.get("trained_at"),
-        "monitoring_mode": "SIMULATION",  # honest: not connected to live traffic capture yet
+        "monitoring_mode": "LIVE_CAPTURE" if sensors else "SIMULATION",
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "persistence": "sqlite",
         "sensor_auth": bool(SENSOR_TOKEN),
-        "raw_sensors": len([c for c in storage.list_clients()
-                            if c["client_id"] != "shared"]),
+        "raw_sensors": sensors,
         "last_activity": storage.last_client_seen(),
         "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     })
@@ -368,12 +375,12 @@ def predict():
 
 @app.route("/logs", methods=["GET"])
 def logs():
-    return jsonify(storage.recent_detections(client_id(), 20))
+    return jsonify(storage.recent_detections(console_scope(), 20))
 
 
 @app.route("/stats", methods=["GET"])
 def get_stats():
-    stats = storage.stats(client_id())
+    stats = storage.stats(console_scope())
     rate = round((stats["threats"] / stats["total"]) * 100, 1) if stats["total"] > 0 else 0
     return jsonify({**stats, "threat_rate": str(rate) + "%"})
 
@@ -381,12 +388,21 @@ def get_stats():
 @app.route("/distribution", methods=["GET"])
 def distribution():
     """Attack-type distribution persisted in SQLite, survives refreshes/restarts."""
-    return jsonify(storage.distribution(client_id()))
+    return jsonify(storage.distribution(console_scope()))
 
 
 @app.route("/responses", methods=["GET"])
 def responses():
     """State of the simulated response engine: blocked IPs and recent actions."""
+    if console_scope() is None:
+        ip_list = storage.blocked_ips(None)
+        return jsonify({
+            "available": True,
+            "blocked_ips": ip_list,
+            "blocked_ip_count": len(ip_list),
+            "counts": storage.action_counts(None),
+            "recent": storage.recent_actions(None, 20),
+        })
     engine = client_state()
     return jsonify({"available": True, **engine.snapshot()})
 

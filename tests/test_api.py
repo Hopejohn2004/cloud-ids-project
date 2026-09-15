@@ -171,6 +171,26 @@ def test_operator_cookie_allows_predict_without_token(client, app_module, monkey
            res.get_json().get("attack_type")
 
 
+def test_global_scope_aggregates_all_clients(client, sample_feature_vector):
+    import os as _os
+    with open(_os.path.join("templates", "attack_samples.json")) as f:
+        ddos = json.load(f)["DDoS"]
+    client.post("/predict", json=sample_feature_vector,
+                headers={"X-Client-Id": "scope-a"})
+    client.post("/predict", json=ddos,
+                headers={"X-Client-Id": "scope-b"})
+
+    stats = client.get("/stats?scope=global").get_json()
+    assert stats["total"] >= 2
+    assert stats["threats"] >= 1
+
+    logs = client.get("/logs?scope=global").get_json()
+    assert len(logs) >= 2
+
+    dist = client.get("/distribution?scope=global").get_json()
+    assert len(dist) >= 1
+
+
 # ── Retention / pruning ───────────────────────────────────────────────────────
 def test_prune_deletes_old_rows(app_module):
     storage = app_module.storage
