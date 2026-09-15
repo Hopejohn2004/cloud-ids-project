@@ -251,6 +251,69 @@ The app reads the `$PORT` environment variable and runs under Gunicorn, so no co
 
 The dashboard shows a **LIVE CAPTURE · _N_ SENSORS** badge (green) once one or more capture agents have reported, and falls back to an amber **SIMULATION MODE** badge otherwise. The badge and sensor count come from polling `/health` every 5s.
 
+### Enabling sensor authentication on Render
+
+By default the deployed instance runs with authentication **disabled** — any reachable client can POST to `/predict`. To restrict this to known sensors:
+
+1. Open your Render service → **Environment** tab
+2. Add an environment variable: key = `IDS_SENSOR_TOKEN`, value = any long random string you choose (e.g. a 48-char hex string)
+3. Render redeploys automatically on env-var changes
+
+Once set, capture agents must supply the matching token:
+
+```powershell
+# Option A: --token flag
+.\venv\Scripts\python.exe src\capture_agent.py --pcap demo\pcaps\ddos.pcap --api https://cloud-ids-c88k.onrender.com --token YOUR_TOKEN
+
+# Option B: env var
+$env:IDS_SENSOR_TOKEN="YOUR_TOKEN"
+.\venv\Scripts\python.exe src\capture_agent.py --pcap demo\pcaps\ddos.pcap --api https://cloud-ids-c88k.onrender.com
+```
+
+Verify: POST to `/predict` **without** a token (should return `401`), then **with** the token (should return the prediction JSON). The `/health` endpoint exposes `sensor_auth: true` once the variable is set.
+
+### Retention policy
+
+Setting `IDS_RETENTION_DAYS` to a nonzero value (e.g. `30`) causes the server to automatically prune detections and actions older than that many days at startup, keeping the database from growing indefinitely on the persistent disk.
+
+---
+
+## 📊 Results
+
+The selected model is **XGBoost** — accuracy 99.79%, macro F1 91.34% on the stratified live-pipeline test set (model comparison in `demo/report/model_comparison.png`). The ten most important features by gain (computable from the saved model; see `demo/report/feature_importance.png`):
+
+1. Bwd Packet Length Min
+2. Bwd Header Length
+3. min_seg_size_forward
+4. Init_Win_bytes_backward
+5. Total Length of Bwd Packets
+6. Active Min
+7. PSH Flag Count
+8. Destination Port
+9. Fwd IAT Std
+10. Flow Duration
+
+### Live-pipeline replay (all 12 classes)
+
+Per-class pcaps (`demo/pcaps/`) were replayed through the Capture Agent → `/predict` → response-engine chain. Outcomes below; full table with per-class probabilities in `demo/report/live_pipeline_summary.csv` (also visualized in `demo/report/class_confidence.png`):
+
+| Class | Pcap top-1 | Confidence | resolved_by | Action |
+|-------|-----------|------------|-------------|--------|
+| BENIGN | BENIGN | 100.0% | model | ALLOW |
+| Bot | Bot | 99.9% | model | BLOCK |
+| DDoS | DDoS | 79.5% | model | BLOCK |
+| DoS GoldenEye | DDoS | 61.0% | model | BLOCK |
+| DoS Hulk | DoS Hulk | 99.4% | model | BLOCK |
+| DoS Slowhttptest | DoS Slowhttptest | 100.0% | model | BLOCK |
+| DoS slowloris | Bot | 82.7% | model | BLOCK |
+| FTP-Patator | FTP-Patator | 100.0% | model | ALERT |
+| PortScan | PortScan | 62.6% | model | ALERT |
+| SSH-Patator | SSH-Patator | 76.1% | model | ALERT |
+| Web Attack – Brute Force | Web Attack – Brute Force | 72.0% | l7 | BLOCK |
+| Web Attack – XSS | Web Attack – XSS | 72.0% | l7 | BLOCK |
+
+**Outcome:** every attack pcap is correctly blocked or alerted and the benign sample passes cleanly (0 false positives). Two adjacent-class limits are deliberate and documented: GoldenEye is statistically inseparable from DoS Hulk (blocked as DDoS), and Slowloris-shaped traffic may read as the adjacent `Bot` class (still blocked). The layer-7 overlay resolves the two web-attack classes that a 70-feature flow model alone cannot separate.
+
 ---
 
 ## 📚 Dataset
