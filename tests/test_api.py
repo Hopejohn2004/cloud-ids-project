@@ -191,6 +191,30 @@ def test_global_scope_aggregates_all_clients(client, sample_feature_vector):
     assert len(dist) >= 1
 
 
+def test_health_monitoring_modes(client, app_module, monkeypatch,
+                                 sample_feature_vector):
+    monkeypatch.setattr(app_module, "SENSOR_TOKEN", "s3cret-token")
+
+    # No recent sensor activity -> never LIVE (depends on scrollback state)
+    app_module._LAST_SENSOR_POST[0] = 0
+    h0 = client.get("/health").get_json()
+    assert h0["monitoring_mode"] in ("SIMULATION", "MONITORING_IDLE")
+
+    # A live sensor post flips the server to LIVE_CAPTURE
+    client.post("/predict", json=sample_feature_vector,
+                headers={"X-Client-Id": "sensor-x", "X-Sensor-Token": "s3cret-token"})
+    h = client.get("/health").get_json()
+    assert h["raw_sensors"] >= 1
+    assert h["monitoring_mode"] == "LIVE_CAPTURE"
+    assert h["sensor_active"] is True
+
+    # Sensor goes quiet for > SENSOR_IDLE_SECONDS -> MONITORING_IDLE
+    app_module._LAST_SENSOR_POST[0] = 0
+    h = client.get("/health").get_json()
+    assert h["monitoring_mode"] == "MONITORING_IDLE"
+    assert h["sensor_active"] is False
+
+
 # ── Retention / pruning ───────────────────────────────────────────────────────
 def test_prune_deletes_old_rows(app_module):
     storage = app_module.storage

@@ -434,19 +434,26 @@ async function loadHealth() {
       const el = document.getElementById(id);
       if (el && val !== undefined && val !== null) el.textContent = val;
     };
-    const live = h.monitoring_mode === "LIVE_CAPTURE" || (h.raw_sensors || 0) > 0;
+    const mode = h.monitoring_mode || (h.raw_sensors > 0 ? "LIVE_CAPTURE" : "SIMULATION");
+    const sensorCount = h.raw_sensors || 0;
     const modeEl = document.getElementById("headerMode");
     if (modeEl) {
-      if (live) {
-        modeEl.textContent = `LIVE CAPTURE · ${h.raw_sensors || 0} SENSOR${h.raw_sensors === 1 ? "" : "S"}`;
+      if (mode === "LIVE_CAPTURE") {
+        modeEl.textContent = `LIVE CAPTURE · ${sensorCount} SENSOR${sensorCount === 1 ? "" : "S"}`;
         modeEl.style.color = "var(--green)";
+      } else if (mode === "MONITORING_IDLE") {
+        modeEl.textContent = `MONITORING IDLE · ${sensorCount} SENSOR${sensorCount === 1 ? "" : "S"}`;
+        modeEl.style.color = "var(--amber)";
       } else {
         modeEl.textContent = "SIMULATION MODE";
         modeEl.style.color = "var(--amber)";
       }
     }
     const lastTag = document.getElementById("lastStateTag");
-    if (lastTag) lastTag.textContent = live ? "MONITORING LIVE TRAFFIC" : "AWAITING VECTOR SIMULATION";
+    if (lastTag) lastTag.textContent =
+      mode === "LIVE_CAPTURE" ? "MONITORING LIVE TRAFFIC"
+      : mode === "MONITORING_IDLE" ? "NO ACTIVE SENSORS - AWAITING TRAFFIC"
+      : "AWAITING VECTOR SIMULATION";
     set("headerModel", (h.model_name || "").toUpperCase());
     set("headerAccuracy", h.metrics ? h.metrics.accuracy : null);
     set("specModel", h.model_name || "Unknown");

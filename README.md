@@ -184,6 +184,38 @@ goes quiet (`--idle`, default 60s), then a 70-feature CIC-style vector is
 derived and sent to `/predict` with the real source/destination IPs, so the
 response engine can block actual attacker addresses.
 
+The agent is tuned for a busy live interface: multicast/SSDP/mDNS/broadcast
+chatter is dropped in `extract()`, and flows with fewer than `--min-pkts`
+(default 2) packets are skipped, so the sensor only classifies real endpoints.
+
+### Real-network demo walkthrough
+
+```powershell
+# 1. (admin PowerShell, required for raw sockets) sniff your interface
+#    list interfaces first:  .\venv\Scripts\python.exe -c "from scapy.all import conf; [print(i.name, ':', i.description) for i in conf.ifaces.values()]"
+$env:IDS_SENSOR_TOKEN="YOUR_TOKEN"
+.\venv\Scripts\python.exe src\capture_agent.py --iface "Wi-Fi" --api https://cloud-ids-c88k.onrender.com --idle 5
+
+# 2. (second admin window) generate a visible PortScan against your OWN IP
+.\venv\Scripts\python.exe demo\attack_scan.py --vip 192.168.110.203 --ports 80
+```
+
+Expectations:
+
+- The dashboard flips to a green **LIVE CAPTURE · N SENSORS** badge and the
+  tag reads **MONITORING LIVE TRAFFIC** as soon as a sensor reports. With no
+  sensors connected the console honestly shows **SIMULATION MODE** (the
+  browser's sim buttons still work either way).
+- Nearly all real flows classify **BENIGN → ALLOW** — HTTPS payloads are
+  encrypted, so the model only sees flow statistics. A `Bot`/`PortScan`/`DDoS`
+  verdict now and then is the field behaviour — not a false positive.
+- `demo\attack_scan.py --vip <your-own-ip>` draws a `PortScan → ALERT` (or
+  `DDoS → BLOCK` with `--ports 300`); the sweep only ever touches your own
+  machine or a device you own.
+- The live sensor is counted by `/health` (`raw_sensors`, `monitoring_mode`),
+  and with the console's global scope (`?scope=global`) the dashboard shows a
+  fleet-wide view instead of only the browser's own simulated clicks.
+
 Because the trained model lives near a tight benchmark manifold,
 `src/synth_attacks.py` searches the flow knob-space to reproduce each attack
 class's signature as replayable pcaps:
