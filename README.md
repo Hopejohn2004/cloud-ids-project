@@ -99,6 +99,7 @@ cloud-ids-project/
 │   ├── capture_agent.py        ← pcap/live capture agent feeding /predict
 │   ├── l7_signatures.py        ← Layer-7 payload overlay (XSS vs brute force)
 │   ├── synth_attacks.py        ← Per-class traffic synthesizer for live demos
+│   ├── report_assets.py        ← Offline figures + live-pipeline summary CSV
 │   ├── fix_label_names.py      ← One-time label encoding cleanup (raw CSVs)
 │   └── regenerate_report.py    ← Regenerates confusion matrix/report without retraining
 ├── tests/
@@ -199,6 +200,13 @@ every attack pcap exercises a real block. `Web Attack - XSS` and
 L7 overlay resolves at 72% confidence. Replaying them through a running server
 exercises the entire packet → flow → feature → model → (L7) → response chain
 (e.g. DDoS → `BLOCK`, XSS → `BLOCK`, BENIGN → `ALLOW`).
+
+Presentation assets (report figures + a live-pipeline expectation CSV) are
+generated offline from the saved model and manifest:
+
+```powershell
+python src\report_assets.py --out demo\report
+```
 
 ---
 
