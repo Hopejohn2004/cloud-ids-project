@@ -34,7 +34,7 @@ MIN_CLASS_COUNT = 6                    # classes with fewer rows than this are d
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-# ── LOAD RAW DATA ─────────────────────────────────────────────────────────
+# ── LOAD RAW DATA 
 print("Loading raw data...")
 csv_files = glob.glob(os.path.join(RAW_DATA_PATH, "*.csv"))
 if not csv_files:
@@ -101,14 +101,14 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 print(f"Train: {len(X_train):,} | Test: {len(X_test):,}")
 
-# ── SCALE — fit ONLY on train ─────────────────────────────────────────────
+# SCALE — fit ONLY on train 
 print("Fitting scaler on training data only...")
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)   # test set only ever TRANSFORMED, never fit
 print("Scaling complete")
 
-# ── SMOTE — applied ONLY to training data ─────────────────────────────────
+# ── SMOTE — applied ONLY to training data 
 print("Balancing training data with SMOTE (test set untouched)...")
 smote = SMOTE(random_state=RANDOM_STATE)
 X_train_balanced, y_train_balanced = smote.fit_resample(X_train_scaled, y_train)

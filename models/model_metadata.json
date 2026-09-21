@@ -6,7 +6,7 @@
     "Recall": 99.7875,
     "F1-Score": 99.79520571208738,
     "Macro F1": 91.33807142219598,
-    "TrainTime": 264.10420322418213
+    "TrainTime": 311.37492179870605
   },
   "dataset": "CIC-IDS2017",
   "original_dataset_rows": 2830743,
@@ -28,7 +28,7 @@
     "Web Attack - XSS"
   ],
   "random_state": 42,
-  "trained_at": "2026-09-07T20:32:11.335728+00:00",
+  "trained_at": "2026-09-20T17:08:12.112708+00:00",
   "all_model_metrics": {
     "Decision Tree": {
       "Accuracy": 99.71875,
@@ -36,7 +36,7 @@
       "Recall": 99.71875,
       "F1-Score": 99.72228590365346,
       "Macro F1": 91.48304321809792,
-      "TrainTime": 52.440192222595215
+      "TrainTime": 54.868433475494385
     },
     "Random Forest": {
       "Accuracy": 99.63125000000001,
@@ -44,7 +44,7 @@
       "Recall": 99.63125000000001,
       "F1-Score": 99.68077179677167,
       "Macro F1": 88.3518556983716,
-      "TrainTime": 91.9300308227539
+      "TrainTime": 133.96194434165955
     },
     "XGBoost": {
       "Accuracy": 99.7875,
@@ -52,7 +52,7 @@
       "Recall": 99.7875,
       "F1-Score": 99.79520571208738,
       "Macro F1": 91.33807142219598,
-      "TrainTime": 264.10420322418213
+      "TrainTime": 311.37492179870605
     }
   }
 }

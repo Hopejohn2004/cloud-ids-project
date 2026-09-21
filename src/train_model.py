@@ -50,7 +50,7 @@ print(f"Train (balanced): {X_train_balanced.shape}")
 print(f"Test  (untouched): {X_test_original.shape}")
 print(f"Classes: {len(class_names)} -> {class_names}")
 
-# ── MODELS ───────────────────────────────────────────────────────────────────
+# MODELS
 models = {
     "Decision Tree": DecisionTreeClassifier(random_state=RANDOM_STATE),
     "Random Forest": RandomForestClassifier(n_estimators=100, random_state=RANDOM_STATE, n_jobs=-1),
